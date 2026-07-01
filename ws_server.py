@@ -294,19 +294,10 @@ class CDPSession:
             "(async()=>{"
             "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function')return {ok:false,error:'imsdk unavailable'};"
             f"const param={param};"
-            "return await new Promise(resolve=>{"
-            "let done=false;"
-            "const finish=(v)=>{if(done)return;done=true;resolve(v)};"
-            "try{imsdk.invoke('application.insertText2Inputbox',{"
-            "param:param,"
-            "success:(res)=>finish({ok:true,res}),"
-            "failure:(err)=>finish({ok:false,err}),"
-            "timeout:3000"
-            "});}catch(e){finish({ok:false,error:String(e&&e.message||e)})}"
-            "setTimeout(()=>finish({ok:true,timeout:true}),3500);"
-            "});"
+            "try{imsdk.invoke('application.insertText2Inputbox',param);return {ok:true,fireAndForget:true};}"
+            "catch(e){return {ok:false,error:String(e&&e.message||e)}}"
             "})()",
-            timeout=5.0,
+            timeout=2.0,
         )
         if isinstance(result, dict):
             return bool(result.get("ok"))
@@ -320,19 +311,10 @@ class CDPSession:
             "(async()=>{"
             "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function')return {ok:false,error:'imsdk unavailable'};"
             f"const param={param};"
-            "return await new Promise(resolve=>{"
-            "let done=false;"
-            "const finish=(v)=>{if(done)return;done=true;resolve(v)};"
-            "try{imsdk.invoke('application.openChat',{"
-            "param:param,"
-            "success:(res)=>finish({ok:true,res}),"
-            "failure:(err)=>finish({ok:false,err}),"
-            "timeout:3000"
-            "});}catch(e){finish({ok:false,error:String(e&&e.message||e)})}"
-            "setTimeout(()=>finish({ok:true,timeout:true}),3500);"
-            "});"
+            "try{imsdk.invoke('application.openChat',param);return {ok:true,fireAndForget:true};}"
+            "catch(e){return {ok:false,error:String(e&&e.message||e)}}"
             "})()",
-            timeout=5.0,
+            timeout=2.0,
         )
         if isinstance(result, dict):
             return bool(result.get("ok"))

@@ -120,7 +120,8 @@ class SellerSession:
         logger.info(f"机器人新消息通知 [{buyer_nick}]")
 
         if config.robot.auto_reply:
-            await self.cdp.open_chat(buyer_nick)
+            cdp = self._select_send_cdp()
+            await cdp.open_chat(buyer_nick)
 
     async def handle_conversation_change(self, *args):
         """处理会话切换 — 复刻 QN.Cdp_EvBuyerSwitched。"""
@@ -203,6 +204,14 @@ class SellerSession:
                         cdp.href,
                     )
                     self.cdp = cdp
+                logger.info(
+                    "准备发送回复: buyer=%s, href=%s, chat=%s, imsdk=%s, vs=%s",
+                    buyer,
+                    cdp.href,
+                    cdp.is_chat_session,
+                    cdp.has_imsdk,
+                    cdp.has_vs,
+                )
 
                 # 打开买家聊天窗口
                 await cdp.open_chat(buyer)
