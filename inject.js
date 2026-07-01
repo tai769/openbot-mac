@@ -58,7 +58,19 @@
     socket.onmessage = async function(event) {
       try {
         let param = JSON.parse(event.data);
-        if (param.method === 'execute') {
+        if (param.method === 'executeNoWait') {
+          socket.send(JSON.stringify({
+            type: 'executeNoWaitAck',
+            response: JSON.stringify({ ok: true, noWait: true })
+          }));
+          setTimeout(function() {
+            try {
+              eval(param.expression);
+            } catch (err) {
+              console.error('[OpenBot] EvalNoWait 错误:', err);
+            }
+          }, 0);
+        } else if (param.method === 'execute') {
           // 远程 eval — 复刻 openbot 的 execute 模式
           try {
             const res = await eval(param.expression);

@@ -45,11 +45,11 @@ def _ability_event_name(response: str) -> str:
 
 
 def _should_log_ability(response: str) -> bool:
-    return True
+    return False
 
 
 def _should_log_probe(response: str) -> bool:
-    return True
+    return False
 
 
 class CDPSession:
@@ -114,6 +114,8 @@ class CDPSession:
         if msg.type == "execute":
             await self._handle_execute_response(msg)
             return
+        if msg.type == "executeNoWaitAck":
+            return
 
         # 事件分发 — 复刻 CDPClient 的事件路由
         if msg.type == "receiveNewMsg":
@@ -139,7 +141,6 @@ class CDPSession:
                 await self.on_shop_robot_receive(self, msg.response)
         elif msg.type == "bridgeReady":
             self.update_context_from_payload(msg.response)
-            logger.info(f"bridgeReady: {msg.response[:5000]}")
             if self.on_bridge_ready:
                 await self.on_bridge_ready(self, msg.response)
         elif msg.type in (
@@ -159,21 +160,28 @@ class CDPSession:
             if _should_log_probe(msg.response):
                 logger.info(f"workbenchProbe: {msg.response[:8000]}")
         elif msg.type == "extensionHookSeen":
-            logger.info(f"extensionHookSeen: {msg.response[:5000]}")
+            logger.debug(f"extensionHookSeen: {msg.response[:5000]}")
         elif msg.type == "extensionHookLoaded":
-            logger.info(f"extensionHookLoaded: {msg.response[:5000]}")
+            logger.debug(f"extensionHookLoaded: {msg.response[:5000]}")
         elif msg.type == "nativeWangwangEvent":
-            logger.info(f"nativeWangwangEvent: {msg.response[:8000]}")
+            logger.debug(f"nativeWangwangEvent: {msg.response[:8000]}")
             if self.on_ability_event:
                 await self.on_ability_event(self, msg.response)
         elif msg.type == "pageMessageCandidate":
-            logger.info(f"pageMessageCandidate: {msg.response[:8000]}")
+            logger.debug(f"pageMessageCandidate: {msg.response[:8000]}")
             if self.on_ability_event:
                 await self.on_ability_event(self, msg.response)
         elif msg.type == "rawOnEventNotify":
-            logger.info(f"rawOnEventNotify: {msg.response[:8000]}")
+            event_name = _ability_event_name(msg.response)
+            if event_name in (
+                "im.singlemsg.onReceiveNewMsg",
+                "im.singlemsg.onSendNewMsg",
+                "im.singlemsg.onMsgSendUpdate",
+                "im.uiutil.onConversationChange",
+            ):
+                logger.info(f"rawOnEventNotify: {msg.response[:3000]}")
         elif msg.type in ("macOnEventNotify", "macReceiveNewMsgNotify", "macShopRobotNewMsgs"):
-            logger.info(f"{msg.type}: {msg.response[:8000]}")
+            logger.debug(f"{msg.type}: {msg.response[:8000]}")
             if self.on_ability_event:
                 await self.on_ability_event(self, msg.response)
         else:
@@ -203,6 +211,12 @@ class CDPSession:
             return None
         finally:
             self._pending_invokes.pop(invoke_id, None)
+
+    async def invoke_no_wait(self, expression: str) -> bool:
+        """Fire-and-forget JS execution for Qianniu APIs that can block eval responses."""
+        msg = WSMessage(method="executeNoWait", expression=expression)
+        await self._send(msg.to_json())
+        return True
 
     async def _handle_execute_response(self, msg: WSMessage):
         """处理 execute 响应"""
@@ -290,35 +304,25 @@ class CDPSession:
         """插入文本到输入框 — 复刻 CDPClient.InsertText2Inputbox"""
         qn_uid = uid if uid.startswith("cntaobao") else f"cntaobao{uid}"
         param = json.dumps({"uid": qn_uid, "text": text}, ensure_ascii=False)
-        result = await self.invoke(
+        return await self.invoke_no_wait(
             "(()=>{"
             "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function')return {ok:false,error:'imsdk unavailable'};"
             f"const param={param};"
-            "try{setTimeout(()=>imsdk.invoke('application.insertText2Inputbox',param),0);return {ok:true,fireAndForget:true};}"
-            "catch(e){return {ok:false,error:String(e&&e.message||e)}}"
-            "})()",
-            timeout=2.0,
+            "setTimeout(()=>imsdk.invoke('application.insertText2Inputbox',param),0);"
+            "})()"
         )
-        if isinstance(result, dict):
-            return bool(result.get("ok"))
-        return result is not None
 
     async def open_chat(self, nick: str) -> bool:
         """打开买家聊天窗口 — 复刻 CDPClient.OpenChat"""
         qn_nick = nick if nick.startswith("cntaobao") else f"cntaobao{nick}"
         param = json.dumps({"nick": qn_nick}, ensure_ascii=False)
-        result = await self.invoke(
+        return await self.invoke_no_wait(
             "(()=>{"
             "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function')return {ok:false,error:'imsdk unavailable'};"
             f"const param={param};"
-            "try{setTimeout(()=>imsdk.invoke('application.openChat',param),0);return {ok:true,fireAndForget:true};}"
-            "catch(e){return {ok:false,error:String(e&&e.message||e)}}"
-            "})()",
-            timeout=2.0,
+            "setTimeout(()=>imsdk.invoke('application.openChat',param),0);"
+            "})()"
         )
-        if isinstance(result, dict):
-            return bool(result.get("ok"))
-        return result is not None
 
     async def click_send_button(self) -> bool:
         """Click Qianniu's Send button via macOS Accessibility, mirroring QNRpa._sendMessageButton.Click()."""

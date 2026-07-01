@@ -221,10 +221,13 @@ class SellerSession:
                 success = await cdp.insert_text_to_inputbox(buyer, text)
                 if success:
                     await asyncio.sleep(0.5)
+                    logger.info(f"回复已填入输入框，准备点击发送 [{buyer}]")
                     success = await cdp.click_send_button()
                     if not success:
                         logger.warning(f"点击发送按钮失败，尝试回车兜底 [{buyer}]")
                         success = await cdp.press_enter()
+                    else:
+                        logger.info(f"已点击发送按钮 [{buyer}]")
 
                 if success:
                     logger.info(f"已发送回复 [{buyer}]: {text[:50]}...")
