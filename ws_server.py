@@ -304,13 +304,19 @@ class CDPSession:
         """插入文本到输入框 — 复刻 CDPClient.InsertText2Inputbox"""
         qn_uid = uid if uid.startswith("cntaobao") else f"cntaobao{uid}"
         param = json.dumps({"uid": qn_uid, "text": text}, ensure_ascii=False)
-        return await self.invoke_no_wait(
+        result = await self.invoke(
             "(()=>{"
             "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function')return {ok:false,error:'imsdk unavailable'};"
             f"const param={param};"
-            "setTimeout(()=>imsdk.invoke('application.insertText2Inputbox',param),0);"
-            "})()"
+            "try{imsdk.invoke('application.insertText2Inputbox',param);return {ok:true,submitted:true};}"
+            "catch(e){return {ok:false,error:String(e&&e.message||e)}}"
+            "})()",
+            timeout=3.0,
         )
+        if isinstance(result, dict) and result.get("error") == "imsdk unavailable":
+            return False
+        # 千牛这个接口经常执行成功但不返回；超时也当作已提交插入命令。
+        return True
 
     async def open_chat(self, nick: str) -> bool:
         """打开买家聊天窗口 — 复刻 CDPClient.OpenChat"""

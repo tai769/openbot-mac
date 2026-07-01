@@ -220,14 +220,7 @@ class SellerSession:
                 # 插入文本到输入框
                 success = await cdp.insert_text_to_inputbox(buyer, text)
                 if success:
-                    await asyncio.sleep(2.0)
-                    pasted = await cdp.paste_text_to_inputbox(text)
-                    if pasted:
-                        logger.info(f"回复已通过剪贴板确认写入输入框 [{buyer}]")
-                    else:
-                        logger.warning(f"剪贴板写入输入框失败，继续尝试发送 [{buyer}]")
-
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(2.5)
                     logger.info(f"回复文本已准备，准备点击发送 [{buyer}]")
                     success = await cdp.click_send_button()
                     if not success:
