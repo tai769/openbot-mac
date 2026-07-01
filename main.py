@@ -125,6 +125,7 @@ class OpenBotMac:
         self.server.on_conversation_change = self.session_manager.on_conversation_change
         self.server.on_chat_dlg_active = self.session_manager.on_conversation_change
         self.server.on_shop_robot_receive = self.session_manager.on_shop_robot_receive
+        self.server.on_bridge_ready = self.session_manager.on_bridge_ready
         self.server.on_ability_event = self.session_manager.on_native_event
 
         # 启动 WebSocket 服务器

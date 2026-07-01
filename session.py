@@ -192,8 +192,11 @@ class SellerSession:
                 # 插入文本到输入框
                 success = await self.cdp.insert_text_to_inputbox(buyer, text)
                 if success:
-                    await asyncio.sleep(0.3)
-                    success = await self.cdp.press_enter()
+                    await asyncio.sleep(0.5)
+                    success = await self.cdp.click_send_button()
+                    if not success:
+                        logger.warning(f"点击发送按钮失败，尝试回车兜底 [{buyer}]")
+                        success = await self.cdp.press_enter()
 
                 if not success:
                     # 备用方案：使用旧版 API
@@ -313,6 +316,14 @@ class SessionManager:
         """卖家连接 — 复刻 MyWebSocketServer 的卖家初始化"""
         nick = cdp.seller_nick
         await self._ensure_session(cdp, nick)
+
+    async def on_bridge_ready(self, cdp: CDPSession, response: str):
+        """聊天 WebView bridge 就绪后，从 loginID 兜底绑定卖家 session。"""
+        payload = self._decode_event_payload(response)
+        login_id = payload.get("loginID", {})
+        nick = login_id.get("nick", "") if isinstance(login_id, dict) else ""
+        if nick:
+            await self._ensure_session(cdp, nick)
 
     async def on_seller_disconnected(self, cdp: CDPSession):
         """卖家断开"""

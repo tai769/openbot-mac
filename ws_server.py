@@ -80,6 +80,24 @@ class CDPSession:
         self.on_bridge_ready: Optional[Callable] = None
         self.on_ability_event: Optional[Callable] = None
 
+    def update_context_from_payload(self, response: str):
+        """Refresh WebView capability flags from bridgeReady/openbotContextProbe payloads."""
+        payload = _decode_response(response)
+        if isinstance(payload, dict) and isinstance(payload.get("value"), dict):
+            payload = payload["value"]
+        if not isinstance(payload, dict):
+            return
+
+        href = payload.get("href")
+        if href:
+            self.href = str(href)
+        if "hasImsdk" in payload:
+            self.has_imsdk = bool(payload.get("hasImsdk"))
+        elif "hasImsdkInvoke" in payload:
+            self.has_imsdk = bool(payload.get("hasImsdkInvoke"))
+        if "hasVs" in payload:
+            self.has_vs = bool(payload.get("hasVs"))
+
     async def handle_message(self, raw: str):
         """处理收到的消息 — 复刻 CDPClient.OnRecieveMessage"""
         try:
@@ -120,6 +138,7 @@ class CDPSession:
             if self.on_shop_robot_receive:
                 await self.on_shop_robot_receive(self, msg.response)
         elif msg.type == "bridgeReady":
+            self.update_context_from_payload(msg.response)
             logger.info(f"bridgeReady: {msg.response[:5000]}")
             if self.on_bridge_ready:
                 await self.on_bridge_ready(self, msg.response)
@@ -136,6 +155,7 @@ class CDPSession:
             if self.on_ability_event:
                 await self.on_ability_event(self, msg.response)
         elif msg.type == "workbenchProbe":
+            self.update_context_from_payload(msg.response)
             if _should_log_probe(msg.response):
                 logger.info(f"workbenchProbe: {msg.response[:8000]}")
         elif msg.type == "extensionHookSeen":
@@ -317,6 +337,72 @@ class CDPSession:
         if isinstance(result, dict):
             return bool(result.get("ok"))
         return result is not None
+
+    async def click_send_button(self) -> bool:
+        """Click Qianniu's Send button via macOS Accessibility, mirroring QNRpa._sendMessageButton.Click()."""
+        script = r'''
+on clickSendButton(rootElement)
+    tell application "System Events"
+        try
+            if exists (first button of rootElement whose name is "发送") then
+                click (first button of rootElement whose name is "发送")
+                return true
+            end if
+        end try
+
+        try
+            if exists (first UI element of rootElement whose description is "发送") then
+                click (first UI element of rootElement whose description is "发送")
+                return true
+            end if
+        end try
+
+        try
+            repeat with childElement in UI elements of rootElement
+                if my clickSendButton(childElement) then return true
+            end repeat
+        end try
+    end tell
+    return false
+end clickSendButton
+
+tell application "System Events"
+    set targetProcesses to {"AliWorkbench", "千牛", "Aliworkbench"}
+    repeat with processName in targetProcesses
+        if exists process processName then
+            tell process processName
+                set frontmost to true
+                delay 0.1
+                repeat with win in windows
+                    if my clickSendButton(win) then return "clicked"
+                end repeat
+            end tell
+        end if
+    end repeat
+end tell
+return "not_found"
+'''
+
+        def _run() -> bool:
+            try:
+                completed = subprocess.run(
+                    ["osascript", "-e", script],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if completed.stdout.strip() == "clicked":
+                    return True
+                if completed.stderr:
+                    logger.debug("点击发送按钮失败: %s", completed.stderr.strip())
+                return False
+            except Exception as e:
+                logger.debug("点击发送按钮异常: %s", e)
+                return False
+
+        return await asyncio.to_thread(_run)
 
     async def press_enter(self) -> bool:
         """通过 macOS 无障碍按回车，作为发送按钮不可直接调用时的兜底。"""
