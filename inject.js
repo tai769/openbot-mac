@@ -34,6 +34,14 @@
     if (window.chatWebsocket && window.chatWebsocket.readyState === WebSocket.OPEN) {
       return; // 已有活跃连接
     }
+    if (window.chatWebsocket) {
+      try {
+        window.chatWebsocket.onclose = null;
+        window.chatWebsocket.onerror = null;
+        window.chatWebsocket.close();
+      } catch (e) {}
+      window.chatWebsocket = null;
+    }
 
     let socket;
     try {
@@ -45,6 +53,9 @@
     }
 
     socket.onopen = function() {
+      if (window.chatWebsocket && window.chatWebsocket !== socket) {
+        try { window.chatWebsocket.close(); } catch (e) {}
+      }
       console.log('[OpenBot] WebSocket 已连接');
       window.chatWebsocket = socket;
       startHeartbeat();
@@ -93,7 +104,9 @@
 
     socket.onclose = function() {
       console.log('[OpenBot] WebSocket 连接断开，准备重连...');
-      window.chatWebsocket = null;
+      if (window.chatWebsocket === socket) {
+        window.chatWebsocket = null;
+      }
       stopHeartbeat();
       scheduleReconnect();
     };
@@ -107,9 +120,21 @@
     stopHeartbeat();
     heartbeatTimer = setInterval(function() {
       if (window.chatWebsocket && window.chatWebsocket.readyState === WebSocket.OPEN) {
-        window.chatWebsocket.send(JSON.stringify({ type: 'hi' }));
+        try {
+          window.chatWebsocket.send(JSON.stringify({ type: 'hi' }));
+        } catch (e) {
+          try { window.chatWebsocket.close(); } catch (closeErr) {}
+          window.chatWebsocket = null;
+          stopHeartbeat();
+          scheduleReconnect();
+        }
       } else {
         stopHeartbeat();
+        if (window.chatWebsocket) {
+          try { window.chatWebsocket.close(); } catch (e) {}
+          window.chatWebsocket = null;
+        }
+        scheduleReconnect();
       }
     }, HEARTBEAT_INTERVAL);
   }

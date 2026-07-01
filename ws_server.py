@@ -659,13 +659,21 @@ class WebSocketServer:
 
     async def start(self):
         """启动 WebSocket 服务器 — 复刻 MyWebSocketServer.Start"""
-        self._server = await serve(self._handle_connection, WS_HOST, WS_PORT)
+        self._server = await serve(
+            self._handle_connection,
+            WS_HOST,
+            WS_PORT,
+            ping_interval=10,
+            ping_timeout=10,
+            close_timeout=2,
+        )
         logger.info(f"WebSocket 服务器已启动: ws://{WS_HOST}:{WS_PORT}")
 
     async def stop(self):
         """停止服务器"""
         if self._server:
             self._server.close()
+            await self._server.wait_closed()
             logger.info("WebSocket 服务器已停止")
 
     async def _handle_connection(self, ws: ServerConnection):
@@ -690,7 +698,13 @@ class WebSocketServer:
             session.on_ability_event = self._on_ability_event
 
             async def read_messages():
-                async for message in ws:
+                while True:
+                    try:
+                        message = await asyncio.wait_for(ws.recv(), timeout=120)
+                    except asyncio.TimeoutError:
+                        logger.debug("连接空闲超时，主动关闭: %s", session_id)
+                        await ws.close()
+                        break
                     if isinstance(message, str):
                         await session.handle_message(message)
 
