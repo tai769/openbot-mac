@@ -324,6 +324,73 @@ class CDPSession:
             "})()"
         )
 
+    async def paste_text_to_inputbox(self, text: str) -> bool:
+        """Paste text into Qianniu's focused chat input via macOS Accessibility."""
+        escaped = json.dumps(text, ensure_ascii=False)
+        script = f'''
+set replyText to {escaped}
+set oldClipboard to ""
+try
+    set oldClipboard to the clipboard as text
+end try
+
+set the clipboard to replyText
+delay 0.1
+
+tell application "System Events"
+    set targetProcesses to {{"AliWorkbench", "千牛", "Aliworkbench", "Qianniu"}}
+    repeat with processName in targetProcesses
+        if exists process processName then
+            tell process processName
+                set frontmost to true
+                delay 0.1
+                if (count of windows) > 0 then
+                    set win to window 1
+                    try
+                        set p to position of win
+                        set s to size of win
+                        set x to (item 1 of p) + ((item 1 of s) / 2)
+                        set y to (item 2 of p) + (item 2 of s) - 95
+                        click at {{x, y}}
+                        delay 0.1
+                    end try
+                end if
+            end tell
+            keystroke "a" using command down
+            delay 0.05
+            keystroke "v" using command down
+            delay 0.2
+            if oldClipboard is not "" then set the clipboard to oldClipboard
+            return "pasted"
+        end if
+    end repeat
+end tell
+
+if oldClipboard is not "" then set the clipboard to oldClipboard
+return "not_found"
+'''
+
+        def _run() -> bool:
+            try:
+                completed = subprocess.run(
+                    ["osascript", "-e", script],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if completed.stdout.strip() == "pasted":
+                    return True
+                if completed.stderr:
+                    logger.debug("粘贴回复失败: %s", completed.stderr.strip())
+                return False
+            except Exception as e:
+                logger.debug("粘贴回复异常: %s", e)
+                return False
+
+        return await asyncio.to_thread(_run)
+
     async def click_send_button(self) -> bool:
         """Click Qianniu's Send button via macOS Accessibility, mirroring QNRpa._sendMessageButton.Click()."""
         script = r'''
