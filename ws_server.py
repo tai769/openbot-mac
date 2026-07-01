@@ -63,6 +63,9 @@ class CDPSession:
         self.ws = ws
         self.seller_nick: str = ""
         self.qn_version: str = ""
+        self.href: str = ""
+        self.has_imsdk: bool = False
+        self.has_vs: bool = False
         self._pending_invokes: dict[str, asyncio.Future] = {}
         self._invoke_counter = 0
 
@@ -242,7 +245,17 @@ class CDPSession:
             "})",
             timeout=3.0,
         )
-        return result if isinstance(result, dict) else {}
+        if isinstance(result, dict):
+            self.href = str(result.get("href") or "")
+            self.has_imsdk = bool(result.get("hasImsdk"))
+            self.has_vs = bool(result.get("hasVs"))
+            return result
+        return {}
+
+    @property
+    def is_chat_session(self) -> bool:
+        """Only the real chat WebView has imsdk/_vs and can send text reliably."""
+        return self.has_imsdk and self.has_vs and "web_chat-packer/recent.html" in self.href
 
     async def get_version(self) -> str:
         """获取千牛版本 — 复刻 CDPClient.GetVersion"""
@@ -447,7 +460,8 @@ class WebSocketServer:
             # 清理 — 复刻 MyWebSocketServer.OnSessionClosed
             self.sessions.pop(session_id, None)
             if session.seller_nick:
-                self.sellers.pop(session.seller_nick, None)
+                if self.sellers.get(session.seller_nick) is session:
+                    self.sellers.pop(session.seller_nick, None)
                 if self.on_seller_disconnected:
                     await self.on_seller_disconnected(session)
             logger.info(f"连接已清理: {session_id}")

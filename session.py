@@ -249,8 +249,21 @@ class SessionManager:
         cdp.seller_nick = seller_nick
         if seller_nick in self.sessions:
             session = self.sessions[seller_nick]
-            session.cdp = cdp
-            self._bind_session_callbacks(cdp, session)
+            if cdp.is_chat_session or not session.cdp.is_chat_session:
+                session.cdp = cdp
+                self._bind_session_callbacks(cdp, session)
+                logger.debug(
+                    "卖家会话绑定页面: seller=%s, chat=%s, href=%s",
+                    seller_nick,
+                    cdp.is_chat_session,
+                    cdp.href,
+                )
+            else:
+                logger.debug(
+                    "忽略非聊天页面覆盖卖家会话: seller=%s, href=%s",
+                    seller_nick,
+                    cdp.href,
+                )
             return session
 
         session = SellerSession(
@@ -305,6 +318,8 @@ class SessionManager:
         """卖家断开"""
         nick = cdp.seller_nick
         if nick and nick in self.sessions:
+            if self.sessions[nick].cdp is not cdp:
+                return
             del self.sessions[nick]
             logger.info(f"卖家会话已移除: {nick}")
 
