@@ -67,6 +67,7 @@ class CDPSession:
         self.has_imsdk: bool = False
         self.has_vs: bool = False
         self._pending_invokes: dict[str, asyncio.Future] = {}
+        self._pending_send_confirmations: list[tuple[str, asyncio.Future]] = []
         self._invoke_counter = 0
 
         # 事件回调 — 复刻 CDPClient 的事件分发
@@ -180,6 +181,8 @@ class CDPSession:
                 "im.uiutil.onConversationChange",
             ):
                 logger.info(f"rawOnEventNotify: {msg.response[:3000]}")
+            if event_name == "im.singlemsg.onMsgSendUpdate":
+                self._handle_send_update(msg.response)
         elif msg.type in ("macOnEventNotify", "macReceiveNewMsgNotify", "macShopRobotNewMsgs"):
             logger.debug(f"{msg.type}: {msg.response[:8000]}")
             if self.on_ability_event:
@@ -243,6 +246,66 @@ class CDPSession:
             except json.JSONDecodeError:
                 break
         return result
+
+    def create_send_confirmation(self, text: str) -> asyncio.Future:
+        """Create a future that resolves when Qianniu reports this exact text was sent."""
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        self._pending_send_confirmations.append((self._normalize_text(text), future))
+        return future
+
+    async def wait_for_send_confirmation(self, future: asyncio.Future, timeout: float = 8.0) -> bool:
+        """Wait until onMsgSendUpdate confirms the message was actually sent."""
+        try:
+            return bool(await asyncio.wait_for(future, timeout=timeout))
+        except asyncio.TimeoutError:
+            return False
+        finally:
+            self._pending_send_confirmations = [
+                (text, pending)
+                for text, pending in self._pending_send_confirmations
+                if pending is not future
+            ]
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        return " ".join(str(text or "").split())
+
+    def _handle_send_update(self, response: str):
+        if not self._pending_send_confirmations:
+            return
+        sent_texts = self._extract_sent_texts(response)
+        if not sent_texts:
+            return
+        normalized_sent = {self._normalize_text(text) for text in sent_texts}
+        for expected, future in list(self._pending_send_confirmations):
+            if future.done():
+                continue
+            if expected in normalized_sent:
+                future.set_result(True)
+
+    @staticmethod
+    def _extract_sent_texts(response: str) -> list[str]:
+        payload = _decode_response(response)
+        if not isinstance(payload, dict):
+            return []
+        name = payload.get("name")
+        if not isinstance(name, str):
+            return []
+        try:
+            events = json.loads(name)
+        except Exception:
+            return []
+        if not isinstance(events, list):
+            return []
+
+        texts: list[str] = []
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            original = event.get("originalData")
+            if isinstance(original, dict) and isinstance(original.get("text"), str):
+                texts.append(original["text"])
+        return texts
 
     # ─── 千牛 API 快捷方法 — 复刻 CDPClient 的各个方法 ───
 

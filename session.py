@@ -222,19 +222,21 @@ class SellerSession:
                 if success:
                     await asyncio.sleep(2.5)
                     logger.info(f"回复文本已准备，准备点击发送 [{buyer}]")
-                    success = await cdp.click_send_button()
-                    if not success:
+                    send_confirmation = cdp.create_send_confirmation(text)
+                    clicked = await cdp.click_send_button()
+                    if not clicked:
                         logger.warning(f"点击发送按钮失败，尝试回车兜底 [{buyer}]")
-                        success = await cdp.press_enter()
+                        await cdp.press_enter()
                     else:
                         logger.info(f"已点击发送按钮 [{buyer}]")
+                    success = await cdp.wait_for_send_confirmation(send_confirmation)
 
                 if success:
                     logger.info(f"已发送回复 [{buyer}]: {text[:50]}...")
                     # 记录发送的回复
                     await self.chat_logger.log(seller, seller, buyer, text)
                 else:
-                    logger.warning(f"发送回复失败 [{buyer}]")
+                    logger.warning(f"发送回复失败或未收到发送确认 [{buyer}]")
 
             except Exception as e:
                 logger.error(f"发送回复异常: {e}")
