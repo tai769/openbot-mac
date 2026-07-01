@@ -496,6 +496,72 @@ return "not_found"
     async def click_send_button(self) -> bool:
         """Click Qianniu's Send button via macOS Accessibility, mirroring QNRpa._sendMessageButton.Click()."""
         script = r'''
+on textContainsSend(v)
+    try
+        if v is missing value then return false
+        set s to v as text
+        if s contains "发送" then return true
+        if s contains "Send" then return true
+    end try
+    return false
+end textContainsSend
+
+on elementLooksLikeSend(el)
+    tell application "System Events"
+        try
+            if my textContainsSend(name of el) then return true
+        end try
+        try
+            if my textContainsSend(description of el) then return true
+        end try
+        try
+            if my textContainsSend(value of el) then return true
+        end try
+        try
+            if my textContainsSend(help of el) then return true
+        end try
+        try
+            if my textContainsSend(title of el) then return true
+        end try
+    end tell
+    return false
+end elementLooksLikeSend
+
+on clickElementCenter(el)
+    tell application "System Events"
+        try
+            click el
+            return true
+        end try
+        try
+            set p to position of el
+            set s to size of el
+            set x to (item 1 of p) + ((item 1 of s) / 2)
+            set y to (item 2 of p) + ((item 2 of s) / 2)
+            click at {x, y}
+            return true
+        end try
+    end tell
+    return false
+end clickElementCenter
+
+on clickSendElement(rootElement, depth)
+    if depth > 8 then return false
+    tell application "System Events"
+        try
+            if my elementLooksLikeSend(rootElement) then
+                if my clickElementCenter(rootElement) then return true
+            end if
+        end try
+        try
+            repeat with childElement in UI elements of rootElement
+                if my clickSendElement(childElement, depth + 1) then return true
+            end repeat
+        end try
+    end tell
+    return false
+end clickSendElement
+
 on clickWindowSendArea(win)
     tell application "System Events"
         try
@@ -521,7 +587,9 @@ on clickSendInProcess(processName)
                 set frontmost to true
                 delay 0.15
                 if (count of windows) > 0 then
-                    if my clickWindowSendArea(window 1) then return true
+                    set win to window 1
+                    if my clickSendElement(win, 0) then return true
+                    if my clickWindowSendArea(win) then return true
                 end if
             end tell
         end if
@@ -599,6 +667,83 @@ return "pressed"
                 return False
 
         return await asyncio.to_thread(_run)
+
+    async def log_accessibility_snapshot(self):
+        """Log a small Accessibility snapshot near the bottom of Qianniu windows for send-button debugging."""
+        script = r'''
+on describeElement(el)
+    tell application "System Events"
+        set out to ""
+        try
+            set out to out & "role=" & (role of el as text) & " "
+        end try
+        try
+            set out to out & "name=" & (name of el as text) & " "
+        end try
+        try
+            set out to out & "desc=" & (description of el as text) & " "
+        end try
+        try
+            set p to position of el
+            set s to size of el
+            set out to out & "pos=" & (item 1 of p as text) & "," & (item 2 of p as text) & " size=" & (item 1 of s as text) & "," & (item 2 of s as text)
+        end try
+        return out
+    end tell
+end describeElement
+
+on collectElements(rootElement, depth)
+    if depth > 5 then return ""
+    set output to ""
+    tell application "System Events"
+        try
+            set info to my describeElement(rootElement)
+            if info contains "发送" or info contains "Send" or info contains "button" or info contains "AXButton" then
+                set output to output & info & linefeed
+            end if
+        end try
+        try
+            repeat with childElement in UI elements of rootElement
+                set output to output & my collectElements(childElement, depth + 1)
+                if (count paragraphs of output) > 80 then return output
+            end repeat
+        end try
+    end tell
+    return output
+end collectElements
+
+tell application "System Events"
+    set targetProcesses to {"AliWorkbench", "千牛", "Aliworkbench", "Qianniu"}
+    repeat with processName in targetProcesses
+        if exists process processName then
+            tell process processName
+                if (count of windows) > 0 then
+                    return my collectElements(window 1, 0)
+                end if
+            end tell
+        end if
+    end repeat
+end tell
+return ""
+'''
+
+        def _run() -> str:
+            try:
+                completed = subprocess.run(
+                    ["osascript", "-e", script],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=6,
+                    check=False,
+                )
+                return completed.stdout.strip()
+            except Exception:
+                return ""
+
+        snapshot = await asyncio.to_thread(_run)
+        if snapshot:
+            logger.info("发送按钮无障碍快照:\n%s", snapshot[:4000])
 
     async def send_timi_msg(self, user_id: str, text: str) -> bool:
         """发送智能提示消息（旧版千牛） — 复刻 CDPClient.SendTimiMsg"""

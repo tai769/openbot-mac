@@ -246,6 +246,8 @@ class SellerSession:
                         send_confirmation = cdp.create_send_confirmation(text)
                         await cdp.press_enter()
                         success = await cdp.wait_for_send_confirmation(send_confirmation, timeout=5.0)
+                    if not success:
+                        await cdp.log_accessibility_snapshot()
 
                 if success:
                     logger.info(f"已发送回复 [{buyer}]: {text[:50]}...")
