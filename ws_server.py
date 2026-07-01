@@ -323,19 +323,92 @@ class CDPSession:
     async def click_send_button(self) -> bool:
         """Click Qianniu's Send button via macOS Accessibility, mirroring QNRpa._sendMessageButton.Click()."""
         script = r'''
+on textContainsSend(v)
+    try
+        if v is missing value then return false
+        set s to v as text
+        if s contains "发送" then return true
+        if s contains "Send" then return true
+    end try
+    return false
+end textContainsSend
+
+on elementLooksLikeSendButton(el)
+    tell application "System Events"
+        try
+            if my textContainsSend(name of el) then return true
+        end try
+        try
+            if my textContainsSend(description of el) then return true
+        end try
+        try
+            if my textContainsSend(value of el) then return true
+        end try
+        try
+            if my textContainsSend(help of el) then return true
+        end try
+        try
+            if role of el is "AXButton" and my textContainsSend(title of el) then return true
+        end try
+    end tell
+    return false
+end elementLooksLikeSendButton
+
+on clickElementCenter(el)
+    tell application "System Events"
+        try
+            click el
+            return true
+        end try
+        try
+            set p to position of el
+            set s to size of el
+            set x to (item 1 of p) + ((item 1 of s) / 2)
+            set y to (item 2 of p) + ((item 2 of s) / 2)
+            click at {x, y}
+            return true
+        end try
+    end tell
+    return false
+end clickElementCenter
+
+on clickWindowSendArea(win)
+    tell application "System Events"
+        try
+            set p to position of win
+            set s to size of win
+            set x to (item 1 of p) + (item 1 of s) - 70
+            set y to (item 2 of p) + (item 2 of s) - 35
+            click at {x, y}
+            return true
+        end try
+    end tell
+    return false
+end clickWindowSendArea
+
 on clickSendButton(rootElement)
     tell application "System Events"
         try
-            if exists (first button of rootElement whose name is "发送") then
-                click (first button of rootElement whose name is "发送")
-                return true
+            if my elementLooksLikeSendButton(rootElement) then
+                if my clickElementCenter(rootElement) then return true
             end if
         end try
 
         try
-            if exists (first UI element of rootElement whose description is "发送") then
-                click (first UI element of rootElement whose description is "发送")
-                return true
+            if exists (first button of rootElement whose name contains "发送") then
+                if my clickElementCenter(first button of rootElement whose name contains "发送") then return true
+            end if
+        end try
+
+        try
+            if exists (first UI element of rootElement whose name contains "发送") then
+                if my clickElementCenter(first UI element of rootElement whose name contains "发送") then return true
+            end if
+        end try
+
+        try
+            if exists (first UI element of rootElement whose description contains "发送") then
+                if my clickElementCenter(first UI element of rootElement whose description contains "发送") then return true
             end if
         end try
 
@@ -348,18 +421,43 @@ on clickSendButton(rootElement)
     return false
 end clickSendButton
 
-tell application "System Events"
-    set targetProcesses to {"AliWorkbench", "千牛", "Aliworkbench"}
-    repeat with processName in targetProcesses
+on clickSendInProcess(processName)
+    tell application "System Events"
         if exists process processName then
             tell process processName
                 set frontmost to true
                 delay 0.1
                 repeat with win in windows
-                    if my clickSendButton(win) then return "clicked"
+                    if my clickSendButton(win) then return true
                 end repeat
+                if (count of windows) > 0 then
+                    if my clickWindowSendArea(window 1) then return true
+                end if
             end tell
         end if
+    end tell
+    return false
+end clickSendInProcess
+
+tell application "System Events"
+    set targetProcesses to {"AliWorkbench", "千牛", "Aliworkbench", "Qianniu"}
+    repeat with processName in targetProcesses
+        if my clickSendInProcess(processName) then return "clicked"
+    end repeat
+
+    repeat with proc in application processes
+        try
+            set pname to name of proc as text
+            if pname contains "Ali" or pname contains "千牛" or pname contains "Qianniu" then
+                tell proc
+                    set frontmost to true
+                    delay 0.1
+                    repeat with win in windows
+                        if my clickSendButton(win) then return "clicked"
+                    end repeat
+                end tell
+            end if
+        end try
     end repeat
 end tell
 return "not_found"
@@ -372,13 +470,14 @@ return "not_found"
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    timeout=5,
+                    timeout=8,
                     check=False,
                 )
                 if completed.stdout.strip() == "clicked":
                     return True
                 if completed.stderr:
                     logger.debug("点击发送按钮失败: %s", completed.stderr.strip())
+                logger.debug("点击发送按钮未找到控件: stdout=%s", completed.stdout.strip())
                 return False
             except Exception as e:
                 logger.debug("点击发送按钮异常: %s", e)
@@ -387,17 +486,40 @@ return "not_found"
         return await asyncio.to_thread(_run)
 
     async def press_enter(self) -> bool:
-        """通过 macOS 无障碍按回车，作为发送按钮不可直接调用时的兜底。"""
+        """通过 macOS 无障碍触发发送，作为发送按钮不可直接调用时的兜底。"""
+        script = r'''
+tell application "System Events"
+    set targetProcesses to {"AliWorkbench", "千牛", "Aliworkbench", "Qianniu"}
+    repeat with processName in targetProcesses
+        if exists process processName then
+            tell process processName
+                set frontmost to true
+                delay 0.1
+            end tell
+            key code 36
+            delay 0.2
+            key code 36 using command down
+            return "pressed"
+        end if
+    end repeat
+    key code 36
+    delay 0.2
+    key code 36 using command down
+end tell
+return "pressed"
+'''
+
         def _run() -> bool:
             try:
                 completed = subprocess.run(
-                    ["osascript", "-e", 'tell application "System Events" to key code 36'],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=3,
+                    ["osascript", "-e", script],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=4,
                     check=False,
                 )
-                return completed.returncode == 0
+                return completed.stdout.strip() == "pressed"
             except Exception:
                 return False
 
