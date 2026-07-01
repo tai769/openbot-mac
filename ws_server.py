@@ -291,10 +291,10 @@ class CDPSession:
         qn_uid = uid if uid.startswith("cntaobao") else f"cntaobao{uid}"
         param = json.dumps({"uid": qn_uid, "text": text}, ensure_ascii=False)
         result = await self.invoke(
-            "(async()=>{"
+            "(()=>{"
             "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function')return {ok:false,error:'imsdk unavailable'};"
             f"const param={param};"
-            "try{imsdk.invoke('application.insertText2Inputbox',param);return {ok:true,fireAndForget:true};}"
+            "try{setTimeout(()=>imsdk.invoke('application.insertText2Inputbox',param),0);return {ok:true,fireAndForget:true};}"
             "catch(e){return {ok:false,error:String(e&&e.message||e)}}"
             "})()",
             timeout=2.0,
@@ -308,10 +308,10 @@ class CDPSession:
         qn_nick = nick if nick.startswith("cntaobao") else f"cntaobao{nick}"
         param = json.dumps({"nick": qn_nick}, ensure_ascii=False)
         result = await self.invoke(
-            "(async()=>{"
+            "(()=>{"
             "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function')return {ok:false,error:'imsdk unavailable'};"
             f"const param={param};"
-            "try{imsdk.invoke('application.openChat',param);return {ok:true,fireAndForget:true};}"
+            "try{setTimeout(()=>imsdk.invoke('application.openChat',param),0);return {ok:true,fireAndForget:true};}"
             "catch(e){return {ok:false,error:String(e&&e.message||e)}}"
             "})()",
             timeout=2.0,

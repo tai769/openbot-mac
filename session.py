@@ -226,10 +226,6 @@ class SellerSession:
                         logger.warning(f"点击发送按钮失败，尝试回车兜底 [{buyer}]")
                         success = await cdp.press_enter()
 
-                if not success:
-                    # 备用方案：使用旧版 API
-                    success = await cdp.send_timi_msg(buyer, text)
-
                 if success:
                     logger.info(f"已发送回复 [{buyer}]: {text[:50]}...")
                     # 记录发送的回复
