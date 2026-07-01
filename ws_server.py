@@ -463,113 +463,30 @@ return "not_found"
     async def click_send_button(self) -> bool:
         """Click Qianniu's Send button via macOS Accessibility, mirroring QNRpa._sendMessageButton.Click()."""
         script = r'''
-on textContainsSend(v)
-    try
-        if v is missing value then return false
-        set s to v as text
-        if s contains "发送" then return true
-        if s contains "Send" then return true
-    end try
-    return false
-end textContainsSend
-
-on elementLooksLikeSendButton(el)
-    tell application "System Events"
-        try
-            if my textContainsSend(name of el) then return true
-        end try
-        try
-            if my textContainsSend(description of el) then return true
-        end try
-        try
-            if my textContainsSend(value of el) then return true
-        end try
-        try
-            if my textContainsSend(help of el) then return true
-        end try
-        try
-            if role of el is "AXButton" and my textContainsSend(title of el) then return true
-        end try
-    end tell
-    return false
-end elementLooksLikeSendButton
-
-on clickElementCenter(el)
-    tell application "System Events"
-        try
-            click el
-            return true
-        end try
-        try
-            set p to position of el
-            set s to size of el
-            set x to (item 1 of p) + ((item 1 of s) / 2)
-            set y to (item 2 of p) + ((item 2 of s) / 2)
-            click at {x, y}
-            return true
-        end try
-    end tell
-    return false
-end clickElementCenter
-
 on clickWindowSendArea(win)
     tell application "System Events"
         try
             set p to position of win
             set s to size of win
-            set x to (item 1 of p) + (item 1 of s) - 70
-            set y to (item 2 of p) + (item 2 of s) - 35
-            click at {x, y}
+            set baseX to (item 1 of p) + (item 1 of s)
+            set baseY to (item 2 of p) + (item 2 of s)
+            set candidates to {{baseX - 58, baseY - 44}, {baseX - 82, baseY - 44}, {baseX - 58, baseY - 68}, {baseX - 110, baseY - 44}}
+            repeat with pointValue in candidates
+                click at pointValue
+                delay 0.15
+            end repeat
             return true
         end try
     end tell
     return false
 end clickWindowSendArea
 
-on clickSendButton(rootElement)
-    tell application "System Events"
-        try
-            if my elementLooksLikeSendButton(rootElement) then
-                if my clickElementCenter(rootElement) then return true
-            end if
-        end try
-
-        try
-            if exists (first button of rootElement whose name contains "发送") then
-                if my clickElementCenter(first button of rootElement whose name contains "发送") then return true
-            end if
-        end try
-
-        try
-            if exists (first UI element of rootElement whose name contains "发送") then
-                if my clickElementCenter(first UI element of rootElement whose name contains "发送") then return true
-            end if
-        end try
-
-        try
-            if exists (first UI element of rootElement whose description contains "发送") then
-                if my clickElementCenter(first UI element of rootElement whose description contains "发送") then return true
-            end if
-        end try
-
-        try
-            repeat with childElement in UI elements of rootElement
-                if my clickSendButton(childElement) then return true
-            end repeat
-        end try
-    end tell
-    return false
-end clickSendButton
-
 on clickSendInProcess(processName)
     tell application "System Events"
         if exists process processName then
             tell process processName
                 set frontmost to true
-                delay 0.1
-                repeat with win in windows
-                    if my clickSendButton(win) then return true
-                end repeat
+                delay 0.15
                 if (count of windows) > 0 then
                     if my clickWindowSendArea(window 1) then return true
                 end if
@@ -584,21 +501,6 @@ tell application "System Events"
     repeat with processName in targetProcesses
         if my clickSendInProcess(processName) then return "clicked"
     end repeat
-
-    repeat with proc in application processes
-        try
-            set pname to name of proc as text
-            if pname contains "Ali" or pname contains "千牛" or pname contains "Qianniu" then
-                tell proc
-                    set frontmost to true
-                    delay 0.1
-                    repeat with win in windows
-                        if my clickSendButton(win) then return "clicked"
-                    end repeat
-                end tell
-            end if
-        end try
-    end repeat
 end tell
 return "not_found"
 '''
@@ -610,7 +512,7 @@ return "not_found"
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    timeout=8,
+                    timeout=3,
                     check=False,
                 )
                 if completed.stdout.strip() == "clicked":

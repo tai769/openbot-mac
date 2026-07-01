@@ -224,12 +224,14 @@ class SellerSession:
                     logger.info(f"回复文本已准备，准备点击发送 [{buyer}]")
                     send_confirmation = cdp.create_send_confirmation(text)
                     clicked = await cdp.click_send_button()
-                    if not clicked:
+                    if clicked:
+                        logger.info(f"已点击发送区域 [{buyer}]")
+                    success = await cdp.wait_for_send_confirmation(send_confirmation, timeout=3.0)
+                    if not success:
                         logger.warning(f"点击发送按钮失败，尝试回车兜底 [{buyer}]")
+                        send_confirmation = cdp.create_send_confirmation(text)
                         await cdp.press_enter()
-                    else:
-                        logger.info(f"已点击发送按钮 [{buyer}]")
-                    success = await cdp.wait_for_send_confirmation(send_confirmation)
+                        success = await cdp.wait_for_send_confirmation(send_confirmation, timeout=5.0)
 
                 if success:
                     logger.info(f"已发送回复 [{buyer}]: {text[:50]}...")
