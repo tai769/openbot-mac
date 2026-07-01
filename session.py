@@ -38,6 +38,16 @@ class SellerSession:
         self._active_conversations: dict[str, str] = {}  # buyer_nick -> last_question
         self._reply_lock = asyncio.Lock()
 
+    def _select_send_cdp(self) -> CDPSession:
+        """Use the real chat WebView for sending; bridge/summary pages cannot call imsdk."""
+        for cdp in self.server.sessions.values():
+            if cdp.seller_nick == self.seller_nick and cdp.is_chat_session:
+                return cdp
+        for cdp in self.server.sessions.values():
+            if cdp.is_chat_session:
+                return cdp
+        return self.cdp
+
     async def handle_native_text_message(self, buyer_nick: str, buyer_uid: str, message_text: str, msg_key: str = ""):
         """处理 macOS 原生旺旺事件里直接带正文的买家消息。"""
         buyer_nick = buyer_nick or buyer_uid
@@ -185,22 +195,31 @@ class SellerSession:
         """
         async with self._reply_lock:
             try:
+                cdp = self._select_send_cdp()
+                if cdp is not self.cdp:
+                    logger.info(
+                        "切换到聊天页发送: seller=%s, href=%s",
+                        seller,
+                        cdp.href,
+                    )
+                    self.cdp = cdp
+
                 # 打开买家聊天窗口
-                await self.cdp.open_chat(buyer)
+                await cdp.open_chat(buyer)
                 await asyncio.sleep(0.5)  # 等待窗口切换
 
                 # 插入文本到输入框
-                success = await self.cdp.insert_text_to_inputbox(buyer, text)
+                success = await cdp.insert_text_to_inputbox(buyer, text)
                 if success:
                     await asyncio.sleep(0.5)
-                    success = await self.cdp.click_send_button()
+                    success = await cdp.click_send_button()
                     if not success:
                         logger.warning(f"点击发送按钮失败，尝试回车兜底 [{buyer}]")
-                        success = await self.cdp.press_enter()
+                        success = await cdp.press_enter()
 
                 if not success:
                     # 备用方案：使用旧版 API
-                    success = await self.cdp.send_timi_msg(buyer, text)
+                    success = await cdp.send_timi_msg(buyer, text)
 
                 if success:
                     logger.info(f"已发送回复 [{buyer}]: {text[:50]}...")
@@ -255,6 +274,8 @@ class SessionManager:
             if cdp.is_chat_session or not session.cdp.is_chat_session:
                 session.cdp = cdp
                 self._bind_session_callbacks(cdp, session)
+                if cdp.is_chat_session:
+                    self.server.sellers[seller_nick] = cdp
                 logger.debug(
                     "卖家会话绑定页面: seller=%s, chat=%s, href=%s",
                     seller_nick,
@@ -278,6 +299,8 @@ class SessionManager:
         )
         self.sessions[seller_nick] = session
         self._bind_session_callbacks(cdp, session)
+        if cdp.is_chat_session:
+            self.server.sellers[seller_nick] = cdp
 
         if not self._current_seller:
             self._current_seller = seller_nick
