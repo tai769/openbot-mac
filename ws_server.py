@@ -393,6 +393,39 @@ class CDPSession:
             "})()"
         )
 
+    async def open_chat_context(self, nick: str = "", target_id: str = "", ccode: str = "") -> bool:
+        """Open a buyer chat using both imsdk and workbench, for inactive/new conversations."""
+        uid = nick if nick.startswith("cntaobao") else (f"cntaobao{nick}" if nick else "")
+        params = {
+            "uid": uid,
+            "nick": uid or nick,
+            "cid": ccode or "",
+            "securityUID": target_id or "",
+            "targetId": target_id or "",
+            "bizDomain": "taobao",
+            "bizType": "11001",
+        }
+        payload = json.dumps(params, ensure_ascii=False)
+        return await self.invoke_no_wait(
+            "(()=>{"
+            f"const p={payload};"
+            "setTimeout(()=>{"
+            "try{if(typeof imsdk!=='undefined'&&imsdk.invoke&&p.nick)imsdk.invoke('application.openChat',{nick:p.nick});}catch(e){}"
+            "try{if(typeof workbench!=='undefined'&&workbench.application&&workbench.application.invoke)workbench.application.invoke('qn.openChat',p);}catch(e){}"
+            "try{if(typeof workbench!=='undefined'&&workbench.wangwang&&workbench.wangwang.invoke)workbench.wangwang.invoke('qn.openChat',p);}catch(e){}"
+            "},0);"
+            "})()"
+        )
+
+    async def trigger_page_message_scan(self, reason: str = "manual") -> bool:
+        payload = json.dumps(reason, ensure_ascii=False)
+        return await self.invoke_no_wait(
+            "(()=>{"
+            f"const reason={payload};"
+            "setTimeout(()=>{try{if(window.__openbotScanPageMessages)window.__openbotScanPageMessages(reason);}catch(e){}},0);"
+            "})()"
+        )
+
     async def paste_text_to_inputbox(self, text: str) -> bool:
         """Paste text into Qianniu's focused chat input via macOS Accessibility."""
         escaped = json.dumps(text, ensure_ascii=False)

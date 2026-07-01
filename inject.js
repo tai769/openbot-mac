@@ -935,6 +935,9 @@
       });
     } catch (e) {}
   }
+  window.__openbotScanPageMessages = function(reason) {
+    scanPageMessages(reason || 'manual');
+  };
 
   function registerAbilityEvent(eventName) {
     try {

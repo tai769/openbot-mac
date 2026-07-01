@@ -110,6 +110,8 @@ class SellerSession:
             return
 
         buyer_nick = conversation.get("nick", "") if isinstance(conversation, dict) else ""
+        target_id = conversation.get("targetId", "") if isinstance(conversation, dict) else ""
+        ccode = conversation.get("ccode", "") if isinstance(conversation, dict) else ""
         seller_nick = login_id.get("nick", "") if isinstance(login_id, dict) else self.seller_nick
 
         if seller_nick:
@@ -121,7 +123,19 @@ class SellerSession:
 
         if config.robot.auto_reply:
             cdp = self._select_send_cdp()
-            await cdp.open_chat(buyer_nick)
+            asyncio.create_task(self._activate_buyer_chat(cdp, buyer_nick, target_id, ccode))
+
+    async def _activate_buyer_chat(self, cdp: CDPSession, buyer_nick: str, target_id: str = "", ccode: str = ""):
+        """Automatically switch Qianniu to the buyer chat so message bodies become available."""
+        for attempt in range(3):
+            try:
+                await cdp.open_chat_context(buyer_nick, target_id, ccode)
+                await cdp.open_chat(buyer_nick)
+                await asyncio.sleep(0.8 + attempt * 0.5)
+                await cdp.trigger_page_message_scan(f"autoOpen:{attempt + 1}")
+            except Exception as e:
+                logger.debug("自动打开买家会话失败 [%s]: %s", buyer_nick, e)
+            await asyncio.sleep(0.7)
 
     async def handle_conversation_change(self, *args):
         """处理会话切换 — 复刻 QN.Cdp_EvBuyerSwitched。"""
@@ -463,6 +477,10 @@ class SessionManager:
                 if isinstance(item, dict):
                     ccode = item.get("ccode") or item.get("cid", {}).get("ccode", "")
                     logger.info(f"检测到聊天新消息通知: ccode={ccode}")
+                    seller_nick = cdp.seller_nick or self._current_seller or "当前卖家"
+                    session = await self._ensure_session(cdp, seller_nick)
+                    if session and ccode:
+                        asyncio.create_task(session._activate_buyer_chat(cdp, "", "", ccode))
             return
 
         if event_name == "im.singlemsg.onShopRobotReceriveNewMsgs":
