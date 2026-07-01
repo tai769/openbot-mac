@@ -626,10 +626,13 @@ return "pressed"
 
     async def _send(self, data: str):
         """发送原始数据"""
+        if getattr(self.ws, "state", None) is not None and str(self.ws.state).endswith("CLOSED"):
+            logger.debug("跳过已关闭连接发送: %s", self.session_id)
+            return
         try:
             await self.ws.send(data)
         except Exception as e:
-            logger.error(f"发送失败: {e}")
+            logger.debug(f"发送失败: {e}")
 
 
 class WebSocketServer:
@@ -692,28 +695,6 @@ class WebSocketServer:
                         await session.handle_message(message)
 
             reader_task = asyncio.create_task(read_messages())
-
-            context = await session.get_page_context()
-            if context:
-                logger.info(
-                    "连接上下文 %s: url=%s, imsdk=%s, QN=%s, workbench=%s, qnSdk=%s, ability=%s, _vs=%s",
-                    session_id,
-                    context.get("href", ""),
-                    context.get("hasImsdk", False),
-                    context.get("hasQN", False),
-                    context.get("hasWorkbench", False),
-                    context.get("hasQnSdk", False),
-                    context.get("hasAbilityNotify", False),
-                    context.get("hasVs", False),
-                )
-
-            # 获取卖家信息 — 复刻 MyWebSocketServer 的初始化流程
-            nick = await session.get_current_user()
-            if nick:
-                self.sellers[nick] = session
-                logger.info(f"卖家已连接: {nick}")
-                if self.on_seller_connected:
-                    await self.on_seller_connected(session)
 
             await reader_task
 
