@@ -21,6 +21,7 @@
   const HEARTBEAT_INTERVAL = 3000;  // 3 秒心跳
   const RECONNECT_DELAY = 3000;     // 3 秒重连
   const DEBUG_PROBES = true;
+  const OPENBOT_INJECT_VERSION = 'coldstart-ingest-2026-07-02-2205';
 
   // 买家缓存 — 复刻 openbot _buyerCache
   window._buyerCache = window._buyerCache || new Map();
@@ -696,6 +697,7 @@
     var conversationId = typeof window._conversationId !== 'undefined' ? window._conversationId : undefined;
     return {
       reason: reason,
+      openbotInjectVersion: OPENBOT_INJECT_VERSION,
       href: String(location.href),
       title: String(document.title || ''),
       readyState: String(document.readyState || ''),
