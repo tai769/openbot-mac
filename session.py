@@ -705,7 +705,9 @@ class SessionManager:
                 session.cdp = cdp
                 self._bind_session_callbacks(cdp, session)
                 if getattr(cdp, "is_chat_session", False):
-                    self.server.sellers[seller_nick] = cdp
+                    sellers = getattr(self.server, "sellers", None)
+                    if isinstance(sellers, dict):
+                        sellers[seller_nick] = cdp
                 logger.debug(
                     "卖家会话绑定页面: seller=%s, chat=%s, href=%s",
                     seller_nick,
@@ -921,6 +923,20 @@ class SessionManager:
                     session = await self._ensure_session(cdp, seller_nick)
                     if session and ccode:
                         buyer, target_id, resolved_ccode = session._target_for_ccode(ccode)
+                        remote_ccode = resolved_ccode or ccode
+                        remote_messages = await cdp.get_remote_messages(remote_ccode)
+                        remote_result = remote_messages.get("result", [])
+                        remote_count = len(remote_result) if isinstance(remote_result, list) else 0
+                        logger.info(
+                            "主动拉取远程消息: ccode=%s count=%s code=%s",
+                            remote_ccode,
+                            remote_count,
+                            remote_messages.get("code"),
+                        )
+                        if remote_count:
+                            await session.handle_new_message(remote_messages)
+                        else:
+                            await cdp.trigger_page_message_scan(f"remoteEmpty:{remote_ccode}")
                         key = resolved_ccode or target_id or buyer
                         existing = session._pending_activate_tasks.get(key)
                         if not existing or existing.done():

@@ -452,6 +452,40 @@ class CDPSession:
             self.qn_version = result.get("result", {}).get("version", "")
         return self.qn_version
 
+    async def get_remote_messages(self, ccode: str, count: int = 5) -> dict:
+        """Fetch recent messages for a conversation directly from the active WebView."""
+        if not ccode:
+            return {"code": -1, "result": []}
+        ccode_payload = json.dumps(ccode, ensure_ascii=False)
+        count_value = int(count or 5)
+        result = await self.invoke(
+            "(()=>{"
+            "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function')return {code:-2,result:[]};"
+            f"const ccode={ccode_payload};"
+            f"const count={count_value};"
+            "return Promise.race(["
+            "imsdk.invoke('im.singlemsg.GetRemoteHisMsg',{cid:{ccode:ccode,type:1},count:count,gohistory:1,msgid:'-1',msgtime:'-1'}),"
+            "new Promise(resolve=>setTimeout(()=>resolve({code:-3,result:[]}),2500))"
+            "]);"
+            "})()",
+            timeout=3.0,
+        )
+        if not isinstance(result, dict):
+            return {"code": -4, "result": []}
+        remote_result = result.get("result", [])
+        if isinstance(remote_result, dict) and isinstance(remote_result.get("msgs"), list):
+            result = dict(result)
+            result["result"] = remote_result["msgs"]
+        elif isinstance(remote_result, list):
+            result = dict(result)
+        else:
+            result = dict(result)
+            result["result"] = []
+        for msg in result.get("result", []):
+            if isinstance(msg, dict) and not msg.get("ccode"):
+                msg["ccode"] = ccode
+        return result
+
     async def insert_text_to_inputbox(self, uid: str, text: str) -> bool:
         """插入文本到输入框 — 复刻 CDPClient.InsertText2Inputbox"""
         qn_uid = uid if uid.startswith("cntaobao") else f"cntaobao{uid}"

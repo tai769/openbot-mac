@@ -369,6 +369,56 @@ class CoreFlowTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_raw_receive_fetches_remote_messages(self):
+        async def run():
+            old_delay = config.robot.reply_delay
+            config.robot.reply_delay = 0.01
+
+            class RemoteCdp:
+                seller_nick = "seller"
+                is_chat_session = True
+                href = "https://alires-webui/web_chat-packer/recent.html?debug=true"
+
+                async def get_remote_messages(self, ccode):
+                    return {
+                        "code": 0,
+                        "result": [
+                            {
+                                "fromid": {"nick": "buyer", "uid": "2043945092"},
+                                "toid": {"nick": "seller"},
+                                "loginid": {"nick": "seller"},
+                                "originalData": {"text": "新人你好"},
+                                "ccode": ccode,
+                            }
+                        ],
+                    }
+
+                async def trigger_page_message_scan(self, reason):
+                    return True
+
+            manager = SessionManager(SimpleNamespace(sessions={}), AsyncKnowledge(), AsyncRules(), AsyncLogger())
+            session = CapturingSellerSession()
+            manager.sessions["seller"] = session
+            manager._current_seller = "seller"
+
+            try:
+                await manager.on_native_event(
+                    RemoteCdp(),
+                    {
+                        "sid": "im.singlemsg.onReceiveNewMsg",
+                        "name": json.dumps(
+                            [{"ccode": "2043945092.1-1.1#11001@cntaobao"}],
+                            ensure_ascii=False,
+                        ),
+                    },
+                )
+                await asyncio.sleep(1.35)
+                self.assertEqual(session.sent, [("seller", "buyer", "reply:新人你好")])
+            finally:
+                config.robot.reply_delay = old_delay
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()
