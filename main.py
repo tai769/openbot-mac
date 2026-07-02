@@ -15,6 +15,8 @@ macOS 千牛 AI 客服机器人 — 复刻 openbot 架构
 import asyncio
 import logging
 import os
+import platform
+import shutil
 import signal
 import sys
 from datetime import datetime
@@ -86,6 +88,11 @@ class OpenBotMac:
         logger.info("=" * 50)
         logger.info("macOS 千牛 AI 客服机器人启动中...")
         logger.info("=" * 50)
+
+        if platform.system() != "Darwin":
+            raise RuntimeError("openbot-mac 只支持 macOS，需要在 Darwin 系统上运行")
+        if shutil.which("osascript") is None:
+            raise RuntimeError("未找到 osascript，无法使用 macOS 无障碍自动化")
 
         # 1. 初始化数据库 — 复刻 DbHelper
         self.db = DB()

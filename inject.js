@@ -165,6 +165,17 @@
     }
   }
 
+  function withTimeout(promise, timeoutMs, label) {
+    return Promise.race([
+      Promise.resolve(promise),
+      new Promise(function(_, reject) {
+        setTimeout(function() {
+          reject(new Error((label || 'promise') + ' timeout after ' + timeoutMs + 'ms'));
+        }, timeoutMs);
+      })
+    ]);
+  }
+
   window.__openbotMacState = window.__openbotMacState || {
     buyerId: '',
     lastMessageSendTime: '',
@@ -1245,15 +1256,17 @@
 
   async function getRemoteMsg(ccode) {
     try {
-      var remoteMsg = await imsdk.invoke('im.singlemsg.GetRemoteHisMsg', {
+      var remoteMsg = await withTimeout(imsdk.invoke('im.singlemsg.GetRemoteHisMsg', {
         cid: { ccode: ccode, type: 1 },
         count: 3,
         gohistory: 1,
         msgid: '-1',
         msgtime: '-1',
-      });
+      }), 2500, 'GetRemoteHisMsg');
       var buyer = { ccode: ccode };
-      var msgs = remoteMsg.result.msgs;
+      var msgs = remoteMsg && remoteMsg.result && Array.isArray(remoteMsg.result.msgs)
+        ? remoteMsg.result.msgs
+        : [];
       for (var idx = 0; idx < msgs.length; idx++) {
         if (msgs[idx].loginid.nick !== msgs[idx].fromid.nick) {
           buyer = msgs[idx].fromid;
@@ -1269,13 +1282,13 @@
 
   async function getRemoteMessages(ccode) {
     try {
-      var remoteMsg = await imsdk.invoke('im.singlemsg.GetRemoteHisMsg', {
+      var remoteMsg = await withTimeout(imsdk.invoke('im.singlemsg.GetRemoteHisMsg', {
         cid: { ccode: ccode, type: 1 },
         count: 5,
         gohistory: 1,
         msgid: '-1',
         msgtime: '-1'
-      });
+      }), 2500, 'GetRemoteHisMsg');
       var result = remoteMsg && remoteMsg.result ? remoteMsg.result : {};
       var msgs = Array.isArray(result.msgs) ? result.msgs : [];
       msgs.forEach(function(msg) {

@@ -14,6 +14,14 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
+CUSTOMER_SERVICE_GUARDRAIL = (
+    "\n\n强制客服话术要求："
+    "你就是店铺客服本人，不要说自己是机器人、AI、自动回复或助手；"
+    "不要建议买家联系人工客服、转人工或找客服。"
+    "需要核实订单、售后、预约、商品细节时，直接以客服身份说“我这边帮您核实”，"
+    "并请买家提供订单号、商品链接或截图。"
+)
+
 
 class AIClient:
     """
@@ -57,7 +65,8 @@ class AIClient:
         维护 per-buyer 对话历史，调用 Claude API。
         """
         if not self._client:
-            return "[AI 未配置，请在设置中填写 API Key]"
+            logger.error("AI 客户端未初始化，跳过自动回复")
+            return ""
 
         conversation_key = f"{seller}#{buyer}"
         now = time.time()
@@ -80,7 +89,7 @@ class AIClient:
             self._last_active[conversation_key] = now
 
         # 构建 system prompt — 复刻 openbot 的 system prompt 机制
-        system_prompt = config.robot.system_prompt
+        system_prompt = config.robot.system_prompt + CUSTOMER_SERVICE_GUARDRAIL
         if knowledge_context:
             system_prompt += f"\n\n相关商品信息:\n{knowledge_context}"
 
@@ -98,10 +107,10 @@ class AIClient:
 
             if response.status_code == 401:
                 logger.error("API Key 无效")
-                return "[API Key 无效，请检查配置]"
+                return ""
             if response.status_code == 429:
                 logger.warning("API 调用频率限制")
-                return "[服务繁忙，请稍后再试]"
+                return "这边稍后再帮您确认一下。"
             response.raise_for_status()
 
             data = response.json()
@@ -124,14 +133,14 @@ class AIClient:
 
         except httpx.HTTPStatusError as e:
             logger.error(f"AI 调用失败: HTTP {e.response.status_code} {e.response.text[:200]}")
-            return f"[AI 调用出错: HTTP {e.response.status_code}]"
+            return ""
         except Exception as e:
             logger.error(f"AI 调用失败: {e}")
             # 回滚 user message
             async with self._lock:
                 if conversation_key in self._conversations and self._conversations[conversation_key]:
                     self._conversations[conversation_key].pop()
-            return f"[AI 调用出错: {str(e)[:50]}]"
+            return ""
 
     async def clear_conversation(self, seller: str, buyer: str):
         """清除指定买家的对话历史"""

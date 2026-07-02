@@ -16,7 +16,7 @@ import re
 class WSMessage:
     """WebSocket 消息封装"""
     type: str = ""
-    response: str = ""
+    response: Any = ""
     method: str = ""
     expression: str = ""
 
@@ -24,6 +24,8 @@ class WSMessage:
     def from_json(cls, data: str | dict) -> WSMessage:
         if isinstance(data, str):
             data = json.loads(data)
+        if not isinstance(data, dict):
+            data = {}
         return cls(
             type=data.get("type", ""),
             response=data.get("response", ""),
@@ -44,7 +46,9 @@ class UserId:
     uid: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict) -> UserId:
+    def from_dict(cls, d: Any) -> UserId:
+        if not isinstance(d, dict):
+            return cls(nick=str(d or ""), uid="")
         return cls(nick=d.get("nick", ""), uid=d.get("uid", ""))
 
 
@@ -87,7 +91,9 @@ class QNChatMessage:
     time: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict) -> QNChatMessage:
+    def from_dict(cls, d: Any) -> QNChatMessage:
+        if not isinstance(d, dict):
+            d = {}
         return cls(
             fromid=UserId.from_dict(d.get("fromid", {})),
             toid=UserId.from_dict(d.get("toid", {})),
@@ -134,7 +140,11 @@ class ChatResponse:
     result: list[QNChatMessage] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, d: dict) -> ChatResponse:
+    def from_dict(cls, d: Any) -> ChatResponse:
+        if isinstance(d, list):
+            d = {"result": d}
+        if not isinstance(d, dict):
+            d = {}
         result_list = d.get("result", [])
         if isinstance(result_list, str):
             try:
@@ -148,7 +158,9 @@ class ChatResponse:
         )
 
     @classmethod
-    def from_json(cls, data: str) -> ChatResponse:
+    def from_json(cls, data: Any) -> ChatResponse:
+        if isinstance(data, (dict, list)):
+            return cls.from_dict(data)
         return cls.from_dict(json.loads(data))
 
 
