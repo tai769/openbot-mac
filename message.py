@@ -146,11 +146,15 @@ class ChatResponse:
         if not isinstance(d, dict):
             d = {}
         result_list = d.get("result", [])
+        if isinstance(result_list, dict):
+            result_list = result_list.get("msgs", [])
         if isinstance(result_list, str):
             try:
                 result_list = json.loads(result_list)
             except json.JSONDecodeError:
                 result_list = []
+        if isinstance(result_list, dict):
+            result_list = result_list.get("msgs", [])
         return cls(
             code=d.get("code", 0),
             subcode=d.get("subcode", 0),

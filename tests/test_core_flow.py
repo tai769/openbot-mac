@@ -56,6 +56,28 @@ class CoreFlowTests(unittest.TestCase):
         self.assertEqual(msg.type, "rawOnEventNotify")
         self.assertEqual(msg.response, response)
 
+    def test_chat_response_accepts_result_msgs_shape(self):
+        response = {
+            "code": 0,
+            "result": {
+                "msgs": [
+                    {
+                        "fromid": {"nick": "buyer", "uid": "2043945092"},
+                        "toid": {"nick": "seller"},
+                        "loginid": {"nick": "seller"},
+                        "originalData": {"text": "你好"},
+                        "ccode": "2043945092.1-1.1#11001@cntaobao",
+                    }
+                ]
+            },
+        }
+
+        chat_resp = ChatResponse.from_dict(response)
+
+        self.assertEqual(len(chat_resp.result), 1)
+        self.assertEqual(chat_resp.result[0].message_text, "你好")
+        self.assertEqual(chat_resp.result[0].buyer_nick, "buyer")
+
     def test_raw_event_name_prefers_sid_over_json_name(self):
         response = {
             "sid": "im.singlemsg.onMsgSendUpdate",
@@ -305,6 +327,45 @@ class CoreFlowTests(unittest.TestCase):
             await session.handle_conversation_change(response)
             self.assertEqual(session._current_buyer, "buyer")
             self.assertEqual(scans, ["conversationUnread:buyer:1"])
+
+        asyncio.run(run())
+
+    def test_dom_text_fallback_requires_active_unread_context(self):
+        async def run():
+            old_delay = config.robot.reply_delay
+            config.robot.reply_delay = 0.01
+            manager = SessionManager(SimpleNamespace(sessions={}), AsyncKnowledge(), AsyncRules(), AsyncLogger())
+            cdp = SimpleNamespace(seller_nick="seller")
+            session = CapturingSellerSession()
+            session._current_buyer = "buyer"
+            session._current_target_id = "3032966192"
+            manager.sessions["seller"] = session
+            manager._current_seller = "seller"
+
+            try:
+                await manager.on_native_event(
+                    cdp,
+                    {
+                        "source": "dom:text",
+                        "messageText": "你好",
+                        "meta": {"fallback": True, "reason": "conversationUnread:buyer:1:800"},
+                    },
+                )
+                await asyncio.sleep(1.35)
+                self.assertEqual(session.sent, [("seller", "buyer", "reply:你好")])
+
+                await manager.on_native_event(
+                    cdp,
+                    {
+                        "source": "dom:text",
+                        "messageText": "不要处理",
+                        "meta": {"fallback": False, "reason": "timer:3000"},
+                    },
+                )
+                await asyncio.sleep(0.05)
+                self.assertEqual(len(session.sent), 1)
+            finally:
+                config.robot.reply_delay = old_delay
 
         asyncio.run(run())
 

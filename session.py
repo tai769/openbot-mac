@@ -701,22 +701,22 @@ class SessionManager:
         cdp.seller_nick = seller_nick
         if seller_nick in self.sessions:
             session = self.sessions[seller_nick]
-            if cdp.is_chat_session or not session.cdp.is_chat_session:
+            if getattr(cdp, "is_chat_session", False) or not getattr(session.cdp, "is_chat_session", False):
                 session.cdp = cdp
                 self._bind_session_callbacks(cdp, session)
-                if cdp.is_chat_session:
+                if getattr(cdp, "is_chat_session", False):
                     self.server.sellers[seller_nick] = cdp
                 logger.debug(
                     "卖家会话绑定页面: seller=%s, chat=%s, href=%s",
                     seller_nick,
-                    cdp.is_chat_session,
-                    cdp.href,
+                    getattr(cdp, "is_chat_session", False),
+                    getattr(cdp, "href", ""),
                 )
             else:
                 logger.debug(
                     "忽略非聊天页面覆盖卖家会话: seller=%s, href=%s",
                     seller_nick,
-                    cdp.href,
+                    getattr(cdp, "href", ""),
                 )
             return session
 
@@ -837,9 +837,26 @@ class SessionManager:
             text = str(payload.get("messageText") or "").strip()
             nick = str(payload.get("buyerNick") or "")
             uid = str(payload.get("buyerUid") or "")
+            meta = payload.get("meta", {}) if isinstance(payload.get("meta"), dict) else {}
+            seller_nick = cdp.seller_nick or self._current_seller or "当前卖家"
+            session = await self._ensure_session(cdp, seller_nick)
+            if session and not nick and session._current_buyer:
+                nick = session._current_buyer
+            if not uid:
+                uid = session._current_target_id if session else ""
             if text:
                 logger.info(f"页面消息候选 [{source}] [{nick}/{uid}]: {text[:80]}")
-            if source != "dom:messageBubble" or not text:
+            if source != "dom:messageBubble":
+                reason = str(meta.get("reason") or "")
+                allow_text_fallback = (
+                    source == "dom:text"
+                    and bool(meta.get("fallback"))
+                    and bool(nick)
+                    and any(token in reason for token in ("conversationUnread", "autoOpen", "alreadyActive", "remoteEmpty"))
+                )
+                if not allow_text_fallback:
+                    return
+            if not text:
                 return
 
             dedupe_key = f"pageMessageCandidate:{uid}:{nick}:{text}"
@@ -849,8 +866,6 @@ class SessionManager:
             if len(self._native_msg_seen) > 500:
                 self._native_msg_seen = set(list(self._native_msg_seen)[-250:])
 
-            seller_nick = cdp.seller_nick or self._current_seller or "当前卖家"
-            session = await self._ensure_session(cdp, seller_nick)
             if session:
                 await session.handle_native_text_message(nick, uid, text, dedupe_key)
             return

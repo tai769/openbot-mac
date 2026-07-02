@@ -941,8 +941,10 @@
         storage: storage.slice(0, 20)
       });
     }
+    var emittedBubble = false;
     dom.forEach(function(item) {
       if (item.source === 'dom:messageBubble') {
+        emittedBubble = true;
         emitPageMessageCandidate(item.source, item.text, {
           tag: item.tag,
           marker: item.marker,
@@ -951,6 +953,19 @@
         });
       }
     });
+    if (!emittedBubble && /conversationUnread|autoOpen|alreadyActive|remoteEmpty/i.test(String(reason || ''))) {
+      dom.filter(function(item) {
+        return item.source === 'dom:text';
+      }).slice(-3).forEach(function(item) {
+        emitPageMessageCandidate(item.source, item.text, {
+          tag: item.tag,
+          marker: item.marker,
+          rect: item.rect,
+          reason: reason,
+          fallback: true
+        });
+      });
+    }
   }
 
   function schedulePageMessageScans(reason) {
@@ -1315,7 +1330,18 @@
         msgtime: '-1'
       }), 2500, 'GetRemoteHisMsg');
       var result = remoteMsg && remoteMsg.result ? remoteMsg.result : {};
-      var msgs = Array.isArray(result.msgs) ? result.msgs : [];
+      var msgs = [];
+      if (Array.isArray(remoteMsg)) {
+        msgs = remoteMsg;
+      } else if (Array.isArray(result)) {
+        msgs = result;
+      } else if (Array.isArray(result.msgs)) {
+        msgs = result.msgs;
+      } else if (remoteMsg && remoteMsg.data && Array.isArray(remoteMsg.data.msgs)) {
+        msgs = remoteMsg.data.msgs;
+      } else if (remoteMsg && remoteMsg.retdata && Array.isArray(remoteMsg.retdata.msgs)) {
+        msgs = remoteMsg.retdata.msgs;
+      }
       msgs.forEach(function(msg) {
         if (msg && !msg.ccode) msg.ccode = ccode;
       });
