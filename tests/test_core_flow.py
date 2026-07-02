@@ -369,53 +369,55 @@ class CoreFlowTests(unittest.TestCase):
 
         asyncio.run(run())
 
-    def test_raw_receive_fetches_remote_messages(self):
+    def test_raw_receive_requests_remote_messages_without_waiting_for_invoke(self):
         async def run():
-            old_delay = config.robot.reply_delay
-            config.robot.reply_delay = 0.01
-
             class RemoteCdp:
                 seller_nick = "seller"
                 is_chat_session = True
                 href = "https://alires-webui/web_chat-packer/recent.html?debug=true"
 
-                async def get_remote_messages(self, ccode):
-                    return {
-                        "code": 0,
-                        "result": [
-                            {
-                                "fromid": {"nick": "buyer", "uid": "2043945092"},
-                                "toid": {"nick": "seller"},
-                                "loginid": {"nick": "seller"},
-                                "originalData": {"text": "新人你好"},
-                                "ccode": ccode,
-                            }
-                        ],
-                    }
+                def __init__(self):
+                    self.remote_requests = []
+                    self.scans = []
+
+                async def request_remote_messages(self, ccode):
+                    self.remote_requests.append(ccode)
+                    return True
 
                 async def trigger_page_message_scan(self, reason):
+                    self.scans.append(reason)
                     return True
 
             manager = SessionManager(SimpleNamespace(sessions={}), AsyncKnowledge(), AsyncRules(), AsyncLogger())
             session = CapturingSellerSession()
+            session._remember_buyer_target("buyer", ccode="2043945092.1-1.1#11001@cntaobao")
             manager.sessions["seller"] = session
             manager._current_seller = "seller"
 
-            try:
-                await manager.on_native_event(
-                    RemoteCdp(),
-                    {
-                        "sid": "im.singlemsg.onReceiveNewMsg",
-                        "name": json.dumps(
-                            [{"ccode": "2043945092.1-1.1#11001@cntaobao"}],
-                            ensure_ascii=False,
-                        ),
-                    },
-                )
-                await asyncio.sleep(1.35)
-                self.assertEqual(session.sent, [("seller", "buyer", "reply:新人你好")])
-            finally:
-                config.robot.reply_delay = old_delay
+            async def fake_activate(cdp, buyer, target_id, ccode, task_key=None):
+                session._current_buyer = buyer
+                session._current_target_id = target_id
+                session._current_ccode = ccode
+                return True
+
+            session._activate_buyer_chat = fake_activate
+            cdp = RemoteCdp()
+
+            await manager.on_native_event(
+                cdp,
+                {
+                    "sid": "im.singlemsg.onReceiveNewMsg",
+                    "name": json.dumps(
+                        [{"ccode": "2043945092.1-1.1#11001@cntaobao"}],
+                        ensure_ascii=False,
+                    ),
+                },
+            )
+            await asyncio.sleep(0.05)
+
+            self.assertEqual(cdp.remote_requests, ["2043945092.1-1.1#11001@cntaobao"])
+            self.assertEqual(cdp.scans, ["remoteRequested:2043945092.1-1.1#11001@cntaobao"])
+            self.assertEqual(session._current_buyer, "buyer")
 
         asyncio.run(run())
 

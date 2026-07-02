@@ -90,6 +90,9 @@ def _should_log_probe(response: str) -> bool:
         "im.remoteMessages",
         "im.remoteMessages:empty",
         "im.remoteMessages:error",
+        "im.remoteMessages:timeout",
+        "im.remoteMessages:requested",
+        "openbotContextProbe",
         "messageCandidates",
     }
 
@@ -194,6 +197,16 @@ class CDPSession:
                 await self.on_shop_robot_receive(self, msg.response)
         elif msg.type == "bridgeReady":
             self.update_context_from_payload(msg.response)
+            payload = _decode_response(msg.response)
+            if isinstance(payload, dict):
+                version = payload.get("openbotInjectVersion")
+                if version:
+                    logger.info(
+                        "注入脚本版本: session=%s version=%s href=%s",
+                        self.session_id,
+                        version,
+                        payload.get("href", ""),
+                    )
             if self.on_bridge_ready:
                 await self.on_bridge_ready(self, msg.response)
         elif msg.type in (
@@ -485,6 +498,87 @@ class CDPSession:
             if isinstance(msg, dict) and not msg.get("ccode"):
                 msg["ccode"] = ccode
         return result
+
+    async def request_remote_messages(self, ccode: str, count: int = 5) -> bool:
+        """Ask the page to fetch remote messages and push them back through WebSocket.
+
+        Some macOS Qianniu WebViews accept eval commands but never return the execute
+        result. This keeps the receive path event-driven: the page sends receiveNewMsg
+        when GetRemoteHisMsg resolves, and Python does not block waiting for eval.
+        """
+        if not ccode:
+            return False
+        ccode_payload = json.dumps(ccode, ensure_ascii=False)
+        count_value = int(count or 5)
+        return await self.invoke_no_wait(
+            "(()=>{"
+            f"const ccode={ccode_payload};"
+            f"const count={count_value};"
+            "function post(type,payload){"
+            "try{"
+            "const ws=window.chatWebsocket;"
+            "if(ws&&ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({type:type,response:JSON.stringify(payload)}));}"
+            "}catch(e){}"
+            "}"
+            "function probe(name,value){post('workbenchProbe',{name:name,value:value,href:String(location.href)});}"
+            "function normalize(remoteMsg){"
+            "const result=remoteMsg&&remoteMsg.result?remoteMsg.result:{};"
+            "let msgs=[];"
+            "if(Array.isArray(remoteMsg))msgs=remoteMsg;"
+            "else if(Array.isArray(result))msgs=result;"
+            "else if(result&&Array.isArray(result.msgs))msgs=result.msgs;"
+            "else if(remoteMsg&&remoteMsg.data&&Array.isArray(remoteMsg.data.msgs))msgs=remoteMsg.data.msgs;"
+            "else if(remoteMsg&&remoteMsg.retdata&&Array.isArray(remoteMsg.retdata.msgs))msgs=remoteMsg.retdata.msgs;"
+            "msgs.forEach(function(msg){if(msg&&!msg.ccode)msg.ccode=ccode;});"
+            "return {msgs:msgs,result:result};"
+            "}"
+            "function scan(reason){"
+            "try{if(typeof window.__openbotScanPageMessages==='function')window.__openbotScanPageMessages(reason);}catch(e){}"
+            "}"
+            "probe('im.remoteMessages:requested',{ccode:ccode,count:count});"
+            "if(typeof imsdk==='undefined'||typeof imsdk.invoke!=='function'){"
+            "probe('im.remoteMessages:error',{ccode:ccode,error:'imsdk unavailable'});"
+            "scan('remoteError:'+ccode);"
+            "return;"
+            "}"
+            "let done=false;"
+            "const timer=setTimeout(function(){"
+            "if(done)return;"
+            "done=true;"
+            "probe('im.remoteMessages:timeout',{ccode:ccode});"
+            "scan('remoteTimeout:'+ccode);"
+            "},2800);"
+            "try{"
+            "Promise.resolve(imsdk.invoke('im.singlemsg.GetRemoteHisMsg',{cid:{ccode:ccode,type:1},count:count,gohistory:1,msgid:'-1',msgtime:'-1'}))"
+            ".then(function(remoteMsg){"
+            "if(done)return;"
+            "done=true;"
+            "clearTimeout(timer);"
+            "const parsed=normalize(remoteMsg);"
+            "probe('im.remoteMessages',{ccode:ccode,count:parsed.msgs.length,code:remoteMsg&&remoteMsg.code,subcode:remoteMsg&&remoteMsg.subcode,sampleKeys:parsed.msgs[0]?Object.keys(parsed.msgs[0]).slice(0,40):[]});"
+            "if(!parsed.msgs.length){"
+            "probe('im.remoteMessages:empty',{ccode:ccode,code:remoteMsg&&remoteMsg.code,subcode:remoteMsg&&remoteMsg.subcode,resultKeys:parsed.result?Object.keys(parsed.result).slice(0,40):[]});"
+            "scan('remoteEmpty:'+ccode);"
+            "}else{"
+            "post('receiveNewMsg',{code:remoteMsg&&typeof remoteMsg.code!=='undefined'?remoteMsg.code:0,subcode:remoteMsg&&typeof remoteMsg.subcode!=='undefined'?remoteMsg.subcode:0,result:parsed.msgs});"
+            "}"
+            "}).catch(function(e){"
+            "if(done)return;"
+            "done=true;"
+            "clearTimeout(timer);"
+            "probe('im.remoteMessages:error',{ccode:ccode,error:String(e&&e.message||e)});"
+            "scan('remoteError:'+ccode);"
+            "});"
+            "}catch(e){"
+            "if(!done){"
+            "done=true;"
+            "clearTimeout(timer);"
+            "probe('im.remoteMessages:error',{ccode:ccode,error:String(e&&e.message||e)});"
+            "scan('remoteError:'+ccode);"
+            "}"
+            "}"
+            "})()"
+        )
 
     async def insert_text_to_inputbox(self, uid: str, text: str) -> bool:
         """插入文本到输入框 — 复刻 CDPClient.InsertText2Inputbox"""
