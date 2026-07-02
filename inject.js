@@ -313,6 +313,8 @@
             var remoteMessages = await getRemoteMessages(ccode);
             if (remoteMessages && remoteMessages.result && remoteMessages.result.length) {
               sendMessage('receiveNewMsg', remoteMessages);
+            } else {
+              schedulePageMessageScans('remoteEmpty:' + ccode);
             }
           }
           var conv = getCacheConv(cid.ccode);
@@ -951,6 +953,14 @@
     });
   }
 
+  function schedulePageMessageScans(reason) {
+    [200, 800, 1600, 3000, 5000].forEach(function(delay) {
+      setTimeout(function() {
+        scanPageMessages((reason || 'scheduled') + ':' + delay);
+      }, delay);
+    });
+  }
+
   function startPageMessageScanner() {
     if (window.__openbotMacState.pageMessageScannerStarted) return;
     window.__openbotMacState.pageMessageScannerStarted = true;
@@ -1320,6 +1330,18 @@
         },
         href: String(location.href)
       });
+      if (!msgs.length) {
+        sendMessage('workbenchProbe', {
+          name: 'im.remoteMessages:empty',
+          value: {
+            ccode: ccode,
+            code: remoteMsg && remoteMsg.code,
+            subcode: remoteMsg && remoteMsg.subcode,
+            resultKeys: result ? Object.keys(result).slice(0, 40) : []
+          },
+          href: String(location.href)
+        });
+      }
       return {
         code: remoteMsg && typeof remoteMsg.code !== 'undefined' ? remoteMsg.code : 0,
         subcode: remoteMsg && typeof remoteMsg.subcode !== 'undefined' ? remoteMsg.subcode : 0,

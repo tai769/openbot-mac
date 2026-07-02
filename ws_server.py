@@ -82,7 +82,16 @@ def _should_log_ability(response: str) -> bool:
 
 
 def _should_log_probe(response: str) -> bool:
-    return False
+    payload = _decode_response(response)
+    if not isinstance(payload, dict):
+        return False
+    name = str(payload.get("name") or "")
+    return name in {
+        "im.remoteMessages",
+        "im.remoteMessages:empty",
+        "im.remoteMessages:error",
+        "messageCandidates",
+    }
 
 
 class CDPSession:
@@ -212,7 +221,7 @@ class CDPSession:
             if self.on_ability_event:
                 await self.on_ability_event(self, msg.response)
         elif msg.type == "pageMessageCandidate":
-            logger.debug("pageMessageCandidate: %s", _preview(msg.response, 8000))
+            logger.info("pageMessageCandidate: %s", _preview(msg.response, 3000))
             if self.on_ability_event:
                 await self.on_ability_event(self, msg.response)
         elif msg.type == "rawOnEventNotify":
