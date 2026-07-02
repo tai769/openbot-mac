@@ -594,47 +594,58 @@ class SellerSession:
 
                 # 插入文本到输入框
                 success = False
+                if self._log_if_target_drifted(buyer, target_id, ccode, "before_insert"):
+                    return
+                await cdp.insert_text_to_inputbox(buyer, text)
+                await cdp.dom_fill_inputbox(text)
+                logger.info("已下发输入框填充命令 [%s]", buyer)
+                await asyncio.sleep(1.0)
+                if self._log_if_target_drifted(buyer, target_id, ccode, "before_paste"):
+                    return
+                pasted = await cdp.paste_text_to_inputbox(text)
+                if pasted:
+                    logger.info("已通过无障碍粘贴回复文本 [%s]", buyer)
+                else:
+                    logger.warning("无障碍粘贴回复文本失败，继续尝试发送但不重复插入 [%s]", buyer)
+                await asyncio.sleep(1.0)
+
+                send_confirmation = cdp.create_send_confirmation(text)
                 for send_attempt in range(2):
-                    if self._log_if_target_drifted(buyer, target_id, ccode, "before_insert"):
-                        return
-                    await cdp.insert_text_to_inputbox(buyer, text)
-                    await cdp.dom_fill_inputbox(text)
-                    logger.info("已下发输入框填充命令 [%s] attempt=%s", buyer, send_attempt + 1)
-                    await asyncio.sleep(1.0)
-                    if self._log_if_target_drifted(buyer, target_id, ccode, "before_paste"):
-                        return
-                    pasted = await cdp.paste_text_to_inputbox(text)
-                    if pasted:
-                        logger.info("已通过无障碍粘贴回复文本 [%s] attempt=%s", buyer, send_attempt + 1)
-                    else:
-                        logger.warning("无障碍粘贴回复文本失败，继续尝试发送 [%s] attempt=%s", buyer, send_attempt + 1)
-                    await asyncio.sleep(1.0)
-                    if self._log_if_target_drifted(buyer, target_id, ccode, "before_enter"):
+                    if self._log_if_target_drifted(buyer, target_id, ccode, f"before_enter:{send_attempt + 1}"):
                         return
                     logger.info("回复文本已准备，准备发送 [%s] attempt=%s", buyer, send_attempt + 1)
-                    send_confirmation = cdp.create_send_confirmation(text)
                     await cdp.press_enter()
-                    success = await cdp.wait_for_send_confirmation(send_confirmation, timeout=3.0)
+                    success = await cdp.wait_for_send_confirmation(
+                        send_confirmation,
+                        timeout=8.0,
+                        keep_pending_on_timeout=True,
+                    )
                     if not success:
                         if self._log_if_target_drifted(buyer, target_id, ccode, "before_dom_send"):
                             return
                         logger.warning(f"回车发送未确认，尝试 DOM 点击发送按钮 [{buyer}]")
-                        send_confirmation = cdp.create_send_confirmation(text)
                         await cdp.dom_click_send_button()
-                        success = await cdp.wait_for_send_confirmation(send_confirmation, timeout=3.0)
+                        success = await cdp.wait_for_send_confirmation(
+                            send_confirmation,
+                            timeout=5.0,
+                            keep_pending_on_timeout=True,
+                        )
                     if not success:
                         if self._log_if_target_drifted(buyer, target_id, ccode, "before_ax_send"):
                             return
                         logger.warning(f"DOM 点击发送未确认，尝试无障碍点击发送按钮 [{buyer}]")
-                        send_confirmation = cdp.create_send_confirmation(text)
                         clicked = await cdp.click_send_button()
                         if clicked:
                             logger.info(f"已点击发送区域 [{buyer}]")
-                        success = await cdp.wait_for_send_confirmation(send_confirmation, timeout=5.0)
+                        success = await cdp.wait_for_send_confirmation(
+                            send_confirmation,
+                            timeout=8.0,
+                            keep_pending_on_timeout=send_attempt == 0,
+                        )
                     if success:
                         break
                     if send_attempt == 0:
-                        logger.warning("本轮发送未确认，重新插入并粘贴后再试 [%s]", buyer)
+                        logger.warning("本轮发送未确认，将继续尝试发送现有输入框内容，避免重复插入 [%s]", buyer)
                 if not success:
                     await cdp.log_accessibility_snapshot()
 

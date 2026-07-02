@@ -21,6 +21,21 @@ WS_PORT = 41010
 WS_HOST = "127.0.0.1"
 
 
+def _port_owner(port: int) -> str:
+    try:
+        completed = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        return completed.stdout.strip()
+    except Exception:
+        return ""
+
+
 def _decode_response(response: Any) -> Any:
     if isinstance(response, (dict, list)):
         return response
@@ -289,23 +304,31 @@ class CDPSession:
         self._global_send_confirmations.append((self._normalize_text(text), future))
         return future
 
-    async def wait_for_send_confirmation(self, future: asyncio.Future, timeout: float = 8.0) -> bool:
+    async def wait_for_send_confirmation(
+        self,
+        future: asyncio.Future,
+        timeout: float = 8.0,
+        *,
+        keep_pending_on_timeout: bool = False,
+    ) -> bool:
         """Wait until onMsgSendUpdate confirms the message was actually sent."""
         try:
-            return bool(await asyncio.wait_for(future, timeout=timeout))
+            return bool(await asyncio.wait_for(asyncio.shield(future), timeout=timeout))
         except asyncio.TimeoutError:
+            timed_out = True
             return False
         finally:
-            self._pending_send_confirmations = [
-                (text, pending)
-                for text, pending in self._pending_send_confirmations
-                if pending is not future
-            ]
-            self._global_send_confirmations = [
-                (text, pending)
-                for text, pending in self._global_send_confirmations
-                if pending is not future
-            ]
+            if not (keep_pending_on_timeout and not future.done() and locals().get("timed_out")):
+                self._pending_send_confirmations = [
+                    (text, pending)
+                    for text, pending in self._pending_send_confirmations
+                    if pending is not future
+                ]
+                self._global_send_confirmations = [
+                    (text, pending)
+                    for text, pending in self._global_send_confirmations
+                    if pending is not future
+                ]
 
     @staticmethod
     def _normalize_text(text: str) -> str:
@@ -326,6 +349,9 @@ class CDPSession:
             if future.done():
                 continue
             if expected in normalized_sent:
+                future.set_result(True)
+            elif expected and any(expected in sent for sent in normalized_sent):
+                logger.warning("发送确认文本包含预期内容但不完全一致，可能发生重复插入: expected=%s", expected[:80])
                 future.set_result(True)
 
     @staticmethod
@@ -1349,14 +1375,24 @@ class WebSocketServer:
 
     async def start(self):
         """启动 WebSocket 服务器 — 复刻 MyWebSocketServer.Start"""
-        self._server = await serve(
-            self._handle_connection,
-            WS_HOST,
-            WS_PORT,
-            ping_interval=10,
-            ping_timeout=10,
-            close_timeout=2,
-        )
+        try:
+            self._server = await serve(
+                self._handle_connection,
+                WS_HOST,
+                WS_PORT,
+                ping_interval=10,
+                ping_timeout=10,
+                close_timeout=2,
+            )
+        except OSError as e:
+            if getattr(e, "errno", None) == 48:
+                owner = _port_owner(WS_PORT)
+                if owner:
+                    logger.error("端口 %s 已被占用，已有机器人实例可能正在运行:\n%s", WS_PORT, owner)
+                else:
+                    logger.error("端口 %s 已被占用，已有机器人实例可能正在运行", WS_PORT)
+                logger.error("请先关闭旧实例，或执行: lsof -nP -iTCP:%s -sTCP:LISTEN 后 kill 对应 PID", WS_PORT)
+            raise
         logger.info(f"WebSocket 服务器已启动: ws://{WS_HOST}:{WS_PORT}")
 
     async def stop(self):

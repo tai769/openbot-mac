@@ -140,6 +140,47 @@ class CoreFlowTests(unittest.TestCase):
         self.assertEqual(CDPSession._extract_sent_texts(response), ["已发送文本"])
         self.assertEqual(CDPSession._extract_sent_texts(json.dumps(response, ensure_ascii=False)), ["已发送文本"])
 
+    def test_send_confirmation_accepts_text_with_duplicate_insert(self):
+        async def run():
+            cdp = CDPSession("s1", None)
+            future = cdp.create_send_confirmation("您好")
+            response = {
+                "sid": "im.singlemsg.onMsgSendUpdate",
+                "name": json.dumps(
+                    [{"originalData": {"text": "您好\n您好\n"}, "sendStatus": 0}],
+                    ensure_ascii=False,
+                ),
+            }
+
+            cdp._handle_send_update(response)
+
+            self.assertTrue(await cdp.wait_for_send_confirmation(future, timeout=0.01))
+
+        asyncio.run(run())
+
+    def test_send_confirmation_can_survive_intermediate_timeout(self):
+        async def run():
+            cdp = CDPSession("s1", None)
+            future = cdp.create_send_confirmation("您好")
+
+            self.assertFalse(
+                await cdp.wait_for_send_confirmation(
+                    future,
+                    timeout=0.01,
+                    keep_pending_on_timeout=True,
+                )
+            )
+
+            response = {
+                "sid": "im.singlemsg.onMsgSendUpdate",
+                "name": json.dumps([{"originalData": {"text": "您好"}, "sendStatus": 0}], ensure_ascii=False),
+            }
+            cdp._handle_send_update(response)
+
+            self.assertTrue(await cdp.wait_for_send_confirmation(future, timeout=0.01))
+
+        asyncio.run(run())
+
     def test_seller_disconnect_keeps_session_when_other_page_remains(self):
         old_cdp = SimpleNamespace(seller_nick="seller", session_id="old")
         other_cdp = SimpleNamespace(seller_nick="seller", session_id="other")
