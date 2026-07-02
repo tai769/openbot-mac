@@ -235,6 +235,38 @@ class CoreFlowTests(unittest.TestCase):
 
         self.assertIn(chat_cdp, candidates)
 
+    def test_unread_conversation_change_triggers_page_scan(self):
+        async def run():
+            session = CapturingSellerSession()
+            scans = []
+
+            class ScanCdp:
+                async def trigger_page_message_scan(self, reason):
+                    scans.append(reason)
+                    return True
+
+            async def ready_cdp():
+                return ScanCdp()
+
+            session._select_send_cdp_ready = ready_cdp
+            response = {
+                "name": json.dumps(
+                    {
+                        "nick": "buyer",
+                        "targetId": "3032966192",
+                        "ccode": "3032966192.1-2219383781151.1#11001@cntaobao",
+                        "unreadcount": 1,
+                    },
+                    ensure_ascii=False,
+                )
+            }
+
+            await session.handle_conversation_change(response)
+            self.assertEqual(session._current_buyer, "buyer")
+            self.assertEqual(scans, ["conversationUnread:buyer:1"])
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

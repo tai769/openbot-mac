@@ -440,14 +440,14 @@ class SellerSession:
                     )
                     if buyer_nick and attempt >= 1:
                         await cdp.click_conversation_by_name(buyer_nick)
-                    await self._wait_for_target_conversation(
+                    opened = await self._wait_for_target_conversation(
                         buyer_nick,
                         target_id,
                         ccode,
                         timeout=1.6 + attempt * 0.6,
                     )
-                    await cdp.trigger_page_message_scan(f"autoOpen:{attempt + 1}")
-                    if self._is_current_target(buyer_nick, target_id, ccode):
+                    if opened or self._is_current_target(buyer_nick, target_id, ccode):
+                        await cdp.trigger_page_message_scan(f"autoOpen:{attempt + 1}")
                         logger.info("已自动切换到买家会话 [%s]", buyer_nick or ccode)
                         return
                 except Exception as e:
@@ -489,6 +489,14 @@ class SellerSession:
                 ccode=self._current_ccode,
             )
             logger.info(f"当前会话切换: seller={self.seller_nick}, buyer={buyer_nick}")
+            try:
+                unread_count = int(conversation.get("unreadcount") or 0) if isinstance(conversation, dict) else 0
+            except Exception:
+                unread_count = 0
+            if unread_count > 0:
+                cdp = await self._select_send_cdp_ready()
+                logger.info("会话切换后发现未读消息，触发页面扫描: buyer=%s unread=%s", buyer_nick, unread_count)
+                await cdp.trigger_page_message_scan(f"conversationUnread:{buyer_nick}:{unread_count}")
 
     async def _process_single_message(self, msg: QNChatMessage):
         """处理单条消息 — 复刻 QN 的消息处理逻辑"""
