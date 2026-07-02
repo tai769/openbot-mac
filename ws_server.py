@@ -92,8 +92,10 @@ def _should_log_probe(response: str) -> bool:
         "im.remoteMessages:error",
         "im.remoteMessages:timeout",
         "im.remoteMessages:requested",
-        "openbotContextProbe",
-        "messageCandidates",
+        "dom.sendButton:clicked",
+        "dom.sendButton:not_found",
+        "dom.pressEnter:sent",
+        "dom.pressEnter:not_found",
     }
 
 
@@ -1288,21 +1290,76 @@ return "not_found"
             r'''(()=>{
 setTimeout(()=>{
   try{
+    const post=(name,value)=>{
+      try{
+        const ws=window.chatWebsocket;
+        if(ws&&ws.readyState===WebSocket.OPEN){
+          ws.send(JSON.stringify({type:'workbenchProbe',response:JSON.stringify({name:name,value:value,href:String(location.href)})}));
+        }
+      }catch(e){}
+    };
+    const vw=Math.max(document.documentElement.clientWidth||0, window.innerWidth||0);
+    const vh=Math.max(document.documentElement.clientHeight||0, window.innerHeight||0);
     const isVisible=(el)=>{
       const r=el.getBoundingClientRect();
       const s=getComputedStyle(el);
-      return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none';
+      return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&r.left>=0&&r.top>=0&&r.left<vw&&r.top<vh;
     };
     const candidates=[...document.querySelectorAll('button,[role="button"],a,div,span')].filter(el=>{
       const text=(el.innerText||el.textContent||el.getAttribute('aria-label')||el.getAttribute('title')||'').trim();
-      return text==='发送'||text==='Send'||text.endsWith('发送');
-    }).filter(isVisible);
-    const el=candidates[candidates.length-1];
+      return text==='发送'||text==='Send'||text.endsWith('发送')||/发送/.test(text);
+    }).filter(isVisible).map(el=>({el:el,r:el.getBoundingClientRect(),text:(el.innerText||el.textContent||el.getAttribute('aria-label')||el.getAttribute('title')||'').trim()}))
+      .filter(x=>x.r.top>vh*0.55&&x.r.left>vw*0.45)
+      .sort((a,b)=>(b.r.top-a.r.top)||(b.r.left-a.r.left));
+    const item=candidates[0];
+    const el=item&&item.el;
     if(el){
       el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
       el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));
       el.click();
+      post('dom.sendButton:clicked',{text:item.text,rect:{x:item.r.x,y:item.r.y,w:item.r.width,h:item.r.height}});
+    }else{
+      post('dom.sendButton:not_found',{buttons:[...document.querySelectorAll('button,[role="button"],a,div,span')].slice(-20).map(e=>(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title')||'').trim()).filter(Boolean).slice(-10)});
     }
+  }catch(e){}
+},0);
+})()'''
+        )
+
+    async def dom_press_enter(self) -> bool:
+        """Try submitting the focused WebView editor without macOS Accessibility."""
+        return await self.invoke_no_wait(
+            r'''(()=>{
+setTimeout(()=>{
+  try{
+    const post=(name,value)=>{
+      try{
+        const ws=window.chatWebsocket;
+        if(ws&&ws.readyState===WebSocket.OPEN){
+          ws.send(JSON.stringify({type:'workbenchProbe',response:JSON.stringify({name:name,value:value,href:String(location.href)})}));
+        }
+      }catch(e){}
+    };
+    const vw=Math.max(document.documentElement.clientWidth||0, window.innerWidth||0);
+    const vh=Math.max(document.documentElement.clientHeight||0, window.innerHeight||0);
+    const visible=(el)=>{
+      const r=el.getBoundingClientRect();
+      const s=getComputedStyle(el);
+      return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&r.left>=vw*0.25&&r.top>=vh*0.55;
+    };
+    const editors=[...document.querySelectorAll('textarea,input[type="text"],[contenteditable="true"],[role="textbox"]')]
+      .filter(visible)
+      .sort((a,b)=>b.getBoundingClientRect().top-a.getBoundingClientRect().top);
+    const el=editors[0]||document.activeElement;
+    if(!el){post('dom.pressEnter:not_found',{});return;}
+    el.focus&&el.focus();
+    ['keydown','keypress','keyup'].forEach(type=>{
+      el.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+    });
+    ['keydown','keypress','keyup'].forEach(type=>{
+      el.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',keyCode:13,which:13,metaKey:true,bubbles:true,cancelable:true}));
+    });
+    post('dom.pressEnter:sent',{tag:String(el.tagName||''),role:el.getAttribute&&el.getAttribute('role')});
   }catch(e){}
 },0);
 })()'''

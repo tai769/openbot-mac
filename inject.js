@@ -943,19 +943,10 @@
         storage: storage.slice(0, 20)
       });
     }
-    var emittedBubble = false;
-    dom.forEach(function(item) {
-      if (item.source === 'dom:messageBubble') {
-        emittedBubble = true;
-        emitPageMessageCandidate(item.source, item.text, {
-          tag: item.tag,
-          marker: item.marker,
-          rect: item.rect,
-          reason: reason
-        });
-      }
-    });
-    if (!emittedBubble && /conversationUnread|autoOpen|alreadyActive|remoteEmpty/i.test(String(reason || ''))) {
+    // DOM scanning is diagnostic by default. On cold start it can see long
+    // historical conversations, so only emit tiny text fallbacks when remote
+    // APIs are empty and the normal native message channels failed.
+    if (/remoteEmpty/i.test(String(reason || ''))) {
       dom.filter(function(item) {
         return item.source === 'dom:text';
       }).slice(-3).forEach(function(item) {

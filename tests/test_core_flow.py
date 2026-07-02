@@ -416,7 +416,7 @@ class CoreFlowTests(unittest.TestCase):
             await asyncio.sleep(0.05)
 
             self.assertEqual(cdp.remote_requests, ["2043945092.1-1.1#11001@cntaobao"])
-            self.assertEqual(cdp.scans, ["remoteRequested:2043945092.1-1.1#11001@cntaobao"])
+            self.assertEqual(cdp.scans, [])
             self.assertEqual(session._current_buyer, "buyer")
 
         asyncio.run(run())

@@ -602,31 +602,23 @@ class SellerSession:
                 await cdp.dom_fill_inputbox(text)
                 logger.info("已下发输入框填充命令 [%s]", buyer)
                 await asyncio.sleep(1.0)
-                if self._log_if_target_drifted(buyer, target_id, ccode, "before_paste"):
-                    return
-                pasted = await cdp.paste_text_to_inputbox(text)
-                if pasted:
-                    logger.info("已通过无障碍粘贴回复文本 [%s]", buyer)
-                else:
-                    logger.warning("无障碍粘贴回复文本失败，继续尝试发送但不重复插入 [%s]", buyer)
-                await asyncio.sleep(1.0)
 
                 send_confirmation = cdp.create_send_confirmation(text)
                 for send_attempt in range(2):
-                    if self._log_if_target_drifted(buyer, target_id, ccode, f"before_enter:{send_attempt + 1}"):
+                    if self._log_if_target_drifted(buyer, target_id, ccode, f"before_dom_send:{send_attempt + 1}"):
                         return
                     logger.info("回复文本已准备，准备发送 [%s] attempt=%s", buyer, send_attempt + 1)
-                    await cdp.press_enter()
+                    await cdp.dom_click_send_button()
                     success = await cdp.wait_for_send_confirmation(
                         send_confirmation,
-                        timeout=8.0,
+                        timeout=5.0,
                         keep_pending_on_timeout=True,
                     )
                     if not success:
-                        if self._log_if_target_drifted(buyer, target_id, ccode, "before_dom_send"):
+                        if self._log_if_target_drifted(buyer, target_id, ccode, "before_enter_send"):
                             return
-                        logger.warning(f"回车发送未确认，尝试 DOM 点击发送按钮 [{buyer}]")
-                        await cdp.dom_click_send_button()
+                        logger.warning(f"DOM 点击发送未确认，尝试页面/键盘回车 [{buyer}]")
+                        await cdp.dom_press_enter()
                         success = await cdp.wait_for_send_confirmation(
                             send_confirmation,
                             timeout=5.0,
@@ -926,7 +918,6 @@ class SessionManager:
                         remote_ccode = resolved_ccode or ccode
                         await cdp.request_remote_messages(remote_ccode)
                         logger.info("已请求页面异步拉取远程消息: ccode=%s", remote_ccode)
-                        await cdp.trigger_page_message_scan(f"remoteRequested:{remote_ccode}")
                         key = resolved_ccode or target_id or buyer
                         existing = session._pending_activate_tasks.get(key)
                         if not existing or existing.done():
