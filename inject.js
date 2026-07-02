@@ -833,7 +833,7 @@
   }
 
   function collectDomMessageCandidates() {
-    if (!/Intelligent-customer-service|qn-cs-chat-top-summary/i.test(String(location.href || ''))) return [];
+    if (!/web_chat-packer\/recent|Intelligent-customer-service|qn-cs-chat-top-summary/i.test(String(location.href || ''))) return [];
     var candidates = [];
     var nodes = [];
     try {
@@ -930,10 +930,9 @@
   }
 
   function scanPageMessages(reason) {
-    if (!DEBUG_PROBES) return;
     var dom = collectDomMessageCandidates();
     var storage = collectStorageMessageCandidates();
-    if (dom.length || storage.length) {
+    if (DEBUG_PROBES && (dom.length || storage.length)) {
       reportProbe('messageCandidates', {
         reason: reason,
         dom: dom.slice(0, 20),
@@ -1246,8 +1245,24 @@
 
   function updateFromConversation(conv) {
     try {
+      if (!conv) return;
       if (!window._buyerCache.has(conv.ccode)) {
         window._buyerCache.set(conv.ccode, conv);
+      }
+      window.__openbotMacState.activeUser = {
+        cid: conv.ccode || '',
+        uid: conv.nick ? ('cntaobao' + conv.nick) : '',
+        user_nick: conv.nick || conv.display || '',
+        dnick: conv.display || conv.nick || '',
+        securityUID: conv.targetId || '',
+        bizDomain: 'taobao',
+        bizType: conv.bizeType || conv.bizType || '11001'
+      };
+      if (conv.ccode) {
+        window.__openbotMacState.activeUsers[conv.ccode] = window.__openbotMacState.activeUser;
+      }
+      if (conv.targetId) {
+        window.__openbotMacState.buyerId = String(conv.targetId);
       }
     } catch (e) {
       console.error('[OpenBot] updateFromConversation 错误:', e.message);

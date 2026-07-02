@@ -771,7 +771,9 @@ return "not_found"
         return await self.invoke_no_wait(
             "(()=>{"
             f"const reason={payload};"
-            "setTimeout(()=>{try{if(window.__openbotScanPageMessages)window.__openbotScanPageMessages(reason);}catch(e){}},0);"
+            "[200,800,1600,3000].forEach((delay)=>setTimeout(()=>{"
+            "try{if(window.__openbotScanPageMessages)window.__openbotScanPageMessages(reason+':'+delay);}catch(e){}"
+            "},delay));"
             "})()"
         )
 

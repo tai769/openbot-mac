@@ -425,6 +425,8 @@ class SellerSession:
                 return
             for attempt in range(5):
                 try:
+                    if not buyer_nick:
+                        buyer_nick, target_id, ccode = self._target_for_ccode(ccode, target_id)
                     logger.info(
                         "自动切换买家会话尝试: buyer=%s target_id=%s ccode=%s attempt=%s",
                         buyer_nick,
@@ -877,6 +879,20 @@ class SessionManager:
                         await session.handle_native_text_message(nick, uid, text, dedupe_key)
                 else:
                     logger.info(f"原生旺旺消息无正文 [{nick}/{uid}], type={msg_type}")
+                    if nick or uid:
+                        ccode = str(item.get("ccode") or "")
+                        cid = item.get("cid", {})
+                        if not ccode and isinstance(cid, dict):
+                            ccode = str(cid.get("ccode") or "")
+                        seller_nick = cdp.seller_nick or self._current_seller or "当前卖家"
+                        session = await self._ensure_session(cdp, seller_nick)
+                        if session and nick:
+                            session._remember_buyer_target(
+                                nick,
+                                target_id=uid or session._target_id_from_ccode(ccode),
+                                ccode=ccode,
+                                uid=uid,
+                            )
             return
 
         if event_name == "im.singlemsg.onReceiveNewMsg":
