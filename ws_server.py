@@ -94,6 +94,8 @@ def _should_log_probe(response: str) -> bool:
         "im.remoteMessages:requested",
         "dom.sendButton:clicked",
         "dom.sendButton:not_found",
+        "dom.inputbox:filled",
+        "dom.inputbox:not_found",
         "dom.pressEnter:sent",
         "dom.pressEnter:not_found",
     }
@@ -734,6 +736,14 @@ setTimeout(()=>{
 const replyText=''' + payload + r''';
 setTimeout(()=>{
   try{
+    const post=(name,value)=>{
+      try{
+        const ws=window.chatWebsocket;
+        if(ws&&ws.readyState===WebSocket.OPEN){
+          ws.send(JSON.stringify({type:'workbenchProbe',response:JSON.stringify({name:name,value:value,href:String(location.href)})}));
+        }
+      }catch(e){}
+    };
     const vw=Math.max(document.documentElement.clientWidth||0, window.innerWidth||0);
     const vh=Math.max(document.documentElement.clientHeight||0, window.innerHeight||0);
     const visible=(el)=>{
@@ -745,7 +755,10 @@ setTimeout(()=>{
       .filter(visible)
       .sort((a,b)=>b.getBoundingClientRect().top-a.getBoundingClientRect().top);
     const el=editors[0];
-    if(!el)return;
+    if(!el){
+      post('dom.inputbox:not_found',{activeTag:String(document.activeElement&&document.activeElement.tagName||''),editableCount:document.querySelectorAll('textarea,input[type="text"],[contenteditable="true"],[role="textbox"]').length});
+      return;
+    }
     el.focus();
     if('value' in el){
       el.value=replyText;
@@ -756,6 +769,8 @@ setTimeout(()=>{
       el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:replyText}));
       el.dispatchEvent(new Event('change',{bubbles:true}));
     }
+    const r=el.getBoundingClientRect();
+    post('dom.inputbox:filled',{tag:String(el.tagName||''),role:el.getAttribute&&el.getAttribute('role'),contenteditable:el.getAttribute&&el.getAttribute('contenteditable'),rect:{x:r.x,y:r.y,w:r.width,h:r.height}});
   }catch(e){}
 },0);
 })()'''
@@ -1305,11 +1320,30 @@ setTimeout(()=>{
       const s=getComputedStyle(el);
       return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&r.left>=0&&r.top>=0&&r.left<vw&&r.top<vh;
     };
-    const candidates=[...document.querySelectorAll('button,[role="button"],a,div,span')].filter(el=>{
-      const text=(el.innerText||el.textContent||el.getAttribute('aria-label')||el.getAttribute('title')||'').trim();
-      return text==='发送'||text==='Send'||text.endsWith('发送')||/发送/.test(text);
-    }).filter(isVisible).map(el=>({el:el,r:el.getBoundingClientRect(),text:(el.innerText||el.textContent||el.getAttribute('aria-label')||el.getAttribute('title')||'').trim()}))
-      .filter(x=>x.r.top>vh*0.55&&x.r.left>vw*0.45)
+    const textOf=(el)=>((el.innerText||el.textContent||el.getAttribute('aria-label')||el.getAttribute('title')||'')+'').trim();
+    [...document.querySelectorAll('button,[role="button"],a,div,span')].filter(isVisible).some(el=>{
+      const text=textOf(el);
+      if(text==='知道了'||text==='我知道了'){
+        el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
+        el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));
+        el.click();
+        return true;
+      }
+      return false;
+    });
+    const all=[...document.querySelectorAll('button,[role="button"],a,div,span,[class*="send"],[class*="Send"],[id*="send"],[id*="Send"]')]
+      .filter(isVisible)
+      .map(el=>({el:el,r:el.getBoundingClientRect(),text:textOf(el),cls:String(el.className||''),id:String(el.id||''),tag:String(el.tagName||'')}))
+      .filter(x=>x.r.top>vh*0.55&&x.r.left>vw*0.40);
+    const textCandidates=all.filter(x=>{
+      const t=x.text;
+      return t==='发送'||t==='Send'||t.endsWith('发送')||/^发送/.test(t)||/(^|\s)(send|Send)(\s|$)/.test(x.cls)||/(^|\s)(send|Send)(\s|$)/.test(x.id);
+    });
+    const bottomRightCandidates=all.filter(x=>
+      x.r.top>vh*0.70&&x.r.left>vw*0.62&&x.r.width>=18&&x.r.width<=180&&x.r.height>=16&&x.r.height<=90&&
+      !/知道了|新消息|纠错|识别结果|快捷短语|撤回|举报|多选|复制|转发/.test(x.text)
+    );
+    const candidates=(textCandidates.length?textCandidates:bottomRightCandidates)
       .sort((a,b)=>(b.r.top-a.r.top)||(b.r.left-a.r.left));
     const item=candidates[0];
     const el=item&&item.el;
@@ -1317,9 +1351,9 @@ setTimeout(()=>{
       el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
       el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));
       el.click();
-      post('dom.sendButton:clicked',{text:item.text,rect:{x:item.r.x,y:item.r.y,w:item.r.width,h:item.r.height}});
+      post('dom.sendButton:clicked',{text:item.text,tag:item.tag,className:item.cls,id:item.id,rect:{x:item.r.x,y:item.r.y,w:item.r.width,h:item.r.height}});
     }else{
-      post('dom.sendButton:not_found',{buttons:[...document.querySelectorAll('button,[role="button"],a,div,span')].slice(-20).map(e=>(e.innerText||e.textContent||e.getAttribute('aria-label')||e.getAttribute('title')||'').trim()).filter(Boolean).slice(-10)});
+      post('dom.sendButton:not_found',{candidates:all.slice(-20).map(x=>({text:x.text,tag:x.tag,className:x.cls,id:x.id,rect:{x:x.r.x,y:x.r.y,w:x.r.width,h:x.r.height}})).slice(-10)});
     }
   }catch(e){}
 },0);
@@ -1350,8 +1384,8 @@ setTimeout(()=>{
     const editors=[...document.querySelectorAll('textarea,input[type="text"],[contenteditable="true"],[role="textbox"]')]
       .filter(visible)
       .sort((a,b)=>b.getBoundingClientRect().top-a.getBoundingClientRect().top);
-    const el=editors[0]||document.activeElement;
-    if(!el){post('dom.pressEnter:not_found',{});return;}
+    const el=editors[0];
+    if(!el){post('dom.pressEnter:not_found',{activeTag:String(document.activeElement&&document.activeElement.tagName||''),editableCount:document.querySelectorAll('textarea,input[type="text"],[contenteditable="true"],[role="textbox"]').length});return;}
     el.focus&&el.focus();
     ['keydown','keypress','keyup'].forEach(type=>{
       el.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
@@ -1359,7 +1393,8 @@ setTimeout(()=>{
     ['keydown','keypress','keyup'].forEach(type=>{
       el.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',keyCode:13,which:13,metaKey:true,bubbles:true,cancelable:true}));
     });
-    post('dom.pressEnter:sent',{tag:String(el.tagName||''),role:el.getAttribute&&el.getAttribute('role')});
+    const r=el.getBoundingClientRect();
+    post('dom.pressEnter:sent',{tag:String(el.tagName||''),role:el.getAttribute&&el.getAttribute('role'),rect:{x:r.x,y:r.y,w:r.width,h:r.height}});
   }catch(e){}
 },0);
 })()'''

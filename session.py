@@ -832,6 +832,24 @@ class SessionManager:
             nick = str(payload.get("buyerNick") or "")
             uid = str(payload.get("buyerUid") or "")
             meta = payload.get("meta", {}) if isinstance(payload.get("meta"), dict) else {}
+            reason = str(meta.get("reason") or "")
+            is_allowed_page_fallback = (
+                source == "dom:text"
+                and bool(meta.get("fallback"))
+                and bool(nick)
+                and "remoteEmpty" in reason
+            )
+            if not is_allowed_page_fallback:
+                if text:
+                    logger.info(
+                        "忽略页面 DOM 历史/诊断候选 [%s/%s]: source=%s reason=%s text=%s",
+                        nick,
+                        uid,
+                        source,
+                        reason,
+                        text[:60],
+                    )
+                return
             seller_nick = cdp.seller_nick or self._current_seller or "当前卖家"
             session = await self._ensure_session(cdp, seller_nick)
             if session and not nick and session._current_buyer:
@@ -840,16 +858,6 @@ class SessionManager:
                 uid = session._current_target_id if session else ""
             if text:
                 logger.info(f"页面消息候选 [{source}] [{nick}/{uid}]: {text[:80]}")
-            if source != "dom:messageBubble":
-                reason = str(meta.get("reason") or "")
-                allow_text_fallback = (
-                    source == "dom:text"
-                    and bool(meta.get("fallback"))
-                    and bool(nick)
-                    and any(token in reason for token in ("conversationUnread", "autoOpen", "alreadyActive", "remoteEmpty"))
-                )
-                if not allow_text_fallback:
-                    return
             if not text:
                 return
 

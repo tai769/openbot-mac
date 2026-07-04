@@ -330,7 +330,7 @@ class CoreFlowTests(unittest.TestCase):
 
         asyncio.run(run())
 
-    def test_dom_text_fallback_requires_active_unread_context(self):
+    def test_dom_text_fallback_only_handles_remote_empty_context(self):
         async def run():
             old_delay = config.robot.reply_delay
             config.robot.reply_delay = 0.01
@@ -351,19 +351,21 @@ class CoreFlowTests(unittest.TestCase):
                         "meta": {"fallback": True, "reason": "conversationUnread:buyer:1:800"},
                     },
                 )
-                await asyncio.sleep(1.35)
-                self.assertEqual(session.sent, [("seller", "buyer", "reply:你好")])
+                await asyncio.sleep(0.05)
+                self.assertEqual(session.sent, [])
 
                 await manager.on_native_event(
                     cdp,
                     {
                         "source": "dom:text",
-                        "messageText": "不要处理",
-                        "meta": {"fallback": False, "reason": "timer:3000"},
+                        "messageText": "你好",
+                        "buyerNick": "buyer",
+                        "buyerUid": "3032966192",
+                        "meta": {"fallback": True, "reason": "remoteEmpty:3032966192.1-1.1#11001@cntaobao"},
                     },
                 )
-                await asyncio.sleep(0.05)
-                self.assertEqual(len(session.sent), 1)
+                await asyncio.sleep(1.35)
+                self.assertEqual(session.sent, [("seller", "buyer", "reply:你好")])
             finally:
                 config.robot.reply_delay = old_delay
 
