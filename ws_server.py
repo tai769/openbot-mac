@@ -1404,42 +1404,26 @@ setTimeout(()=>{
         """通过 macOS 无障碍触发发送，作为发送按钮不可直接调用时的兜底。"""
         script = r'''
 tell application "System Events"
-    set targetProcesses to {"AliWorkbench", "千牛", "Aliworkbench", "Qianniu"}
-    repeat with processName in targetProcesses
-        if exists process processName then
-            tell process processName
-                set frontmost to true
-                delay 0.1
-            end tell
-            key code 36
-            delay 0.35
-            key code 76
-            delay 0.35
-            key code 36 using command down
-            delay 0.35
-            key code 76 using command down
-            return "pressed"
-        end if
-    end repeat
     key code 36
-    delay 0.35
-    key code 76
-    delay 0.35
-    key code 36 using command down
-    delay 0.35
-    key code 76 using command down
 end tell
 return "pressed"
 '''
 
         def _run() -> bool:
             try:
+                subprocess.run(
+                    ["open", "-a", "Aliworkbench"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=1,
+                    check=False,
+                )
                 completed = subprocess.run(
                     ["osascript", "-e", script],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    timeout=4,
+                    timeout=1.5,
                     check=False,
                 )
                 result = completed.stdout.strip()
