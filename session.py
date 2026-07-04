@@ -615,36 +615,13 @@ class SellerSession:
                         logger.warning("系统回车发送未执行成功，继续尝试发送按钮 [%s]", buyer)
                     success = await cdp.wait_for_send_confirmation(
                         send_confirmation,
-                        timeout=5.0,
+                        timeout=10.0,
                         keep_pending_on_timeout=True,
                     )
-                    if not success:
-                        if self._log_if_target_drifted(buyer, target_id, ccode, "before_ax_send"):
-                            return
-                        logger.warning(f"系统回车发送未确认，尝试无障碍点击发送按钮 [{buyer}]")
-                        clicked = await cdp.click_send_button()
-                        if clicked:
-                            logger.info(f"已点击发送区域 [{buyer}]")
-                        success = await cdp.wait_for_send_confirmation(
-                            send_confirmation,
-                            timeout=8.0,
-                            keep_pending_on_timeout=send_attempt == 0,
-                        )
-                    if not success:
-                        if self._log_if_target_drifted(buyer, target_id, ccode, "before_dom_send"):
-                            return
-                        logger.warning(f"系统/无障碍发送未确认，尝试 DOM 诊断发送 [{buyer}]")
-                        await cdp.dom_click_send_button()
-                        await cdp.dom_press_enter()
-                        success = await cdp.wait_for_send_confirmation(
-                            send_confirmation,
-                            timeout=3.0,
-                            keep_pending_on_timeout=send_attempt == 0,
-                        )
                     if success:
                         break
                     if send_attempt == 0:
-                        logger.warning("本轮发送未确认，将继续尝试发送现有输入框内容，避免重复插入 [%s]", buyer)
+                        logger.warning("系统回车发送未确认，将重试一次现有输入框内容，避免重复插入 [%s]", buyer)
                 if not success:
                     await cdp.log_accessibility_snapshot()
 

@@ -1411,13 +1411,6 @@ return "pressed"
 
         def _run() -> bool:
             try:
-                subprocess.run(
-                    ["open", "-a", "Aliworkbench"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=1,
-                    check=False,
-                )
                 completed = subprocess.run(
                     ["osascript", "-e", script],
                     stdout=subprocess.PIPE,
