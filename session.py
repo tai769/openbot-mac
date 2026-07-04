@@ -605,35 +605,40 @@ class SellerSession:
 
                 send_confirmation = cdp.create_send_confirmation(text)
                 for send_attempt in range(2):
-                    if self._log_if_target_drifted(buyer, target_id, ccode, f"before_dom_send:{send_attempt + 1}"):
+                    if self._log_if_target_drifted(buyer, target_id, ccode, f"before_key_send:{send_attempt + 1}"):
                         return
                     logger.info("回复文本已准备，准备发送 [%s] attempt=%s", buyer, send_attempt + 1)
-                    await cdp.dom_click_send_button()
+                    pressed = await cdp.press_enter()
+                    if pressed:
+                        logger.info("已触发系统回车发送 [%s]", buyer)
+                    else:
+                        logger.warning("系统回车发送未执行成功，继续尝试发送按钮 [%s]", buyer)
                     success = await cdp.wait_for_send_confirmation(
                         send_confirmation,
                         timeout=5.0,
                         keep_pending_on_timeout=True,
                     )
                     if not success:
-                        if self._log_if_target_drifted(buyer, target_id, ccode, "before_enter_send"):
-                            return
-                        logger.warning(f"DOM 点击发送未确认，尝试页面/键盘回车 [{buyer}]")
-                        await cdp.dom_press_enter()
-                        success = await cdp.wait_for_send_confirmation(
-                            send_confirmation,
-                            timeout=5.0,
-                            keep_pending_on_timeout=True,
-                        )
-                    if not success:
                         if self._log_if_target_drifted(buyer, target_id, ccode, "before_ax_send"):
                             return
-                        logger.warning(f"DOM 点击发送未确认，尝试无障碍点击发送按钮 [{buyer}]")
+                        logger.warning(f"系统回车发送未确认，尝试无障碍点击发送按钮 [{buyer}]")
                         clicked = await cdp.click_send_button()
                         if clicked:
                             logger.info(f"已点击发送区域 [{buyer}]")
                         success = await cdp.wait_for_send_confirmation(
                             send_confirmation,
                             timeout=8.0,
+                            keep_pending_on_timeout=send_attempt == 0,
+                        )
+                    if not success:
+                        if self._log_if_target_drifted(buyer, target_id, ccode, "before_dom_send"):
+                            return
+                        logger.warning(f"系统/无障碍发送未确认，尝试 DOM 诊断发送 [{buyer}]")
+                        await cdp.dom_click_send_button()
+                        await cdp.dom_press_enter()
+                        success = await cdp.wait_for_send_confirmation(
+                            send_confirmation,
+                            timeout=3.0,
                             keep_pending_on_timeout=send_attempt == 0,
                         )
                     if success:

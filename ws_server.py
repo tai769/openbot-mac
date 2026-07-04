@@ -1442,8 +1442,14 @@ return "pressed"
                     timeout=4,
                     check=False,
                 )
-                return completed.stdout.strip() == "pressed"
-            except Exception:
+                result = completed.stdout.strip()
+                if result == "pressed":
+                    logger.info("系统回车发送结果: %s", result)
+                    return True
+                logger.info("系统回车发送失败: stdout=%s stderr=%s", result, completed.stderr.strip())
+                return False
+            except Exception as e:
+                logger.info("系统回车发送异常: %s", e)
                 return False
 
         return await asyncio.to_thread(_run)
